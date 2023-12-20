@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import spatial as sp
 from itertools import combinations
 
 def rot2d(theta):
@@ -23,3 +24,31 @@ def reflM(N):
         p[idx] = -1
       projMats.append(p)
   return projMats
+
+def refl2d(nontriv=True):
+  R = np.array([[1, 0], [0, -1 if nontriv else 1]], dtype=float)
+  return R
+
+def voronoi_bbox(points, bbox):
+  '''
+  Obtain Voronoi partition of a bounding rectangle.
+  '''
+  assert points.shape[1] == len(bbox), 'inconsistent dimensionality'
+
+  reflected_points = []
+  for dim, bounds in enumerate(bbox):
+    coords = points[:, dim]
+
+    assert np.all((bounds[0] <= coords) & (coords <= bounds[1])), 'points outside the bounding box'
+
+    for b in bounds:
+      b_reflected_points = np.copy(points)
+      b_reflected_points[:, dim] = 2 * b - coords
+      reflected_points.extend(b_reflected_points)
+
+  sp_vor = sp.Voronoi(np.concatenate([points, reflected_points]))
+
+  cells = [np.array([sp_vor.vertices[v_idx] for v_idx in sp_vor.regions[p_idx]])
+           for p_idx in sp_vor.point_region[:len(points)]]
+
+  return cells
