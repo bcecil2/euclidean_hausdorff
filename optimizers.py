@@ -3,8 +3,11 @@ from geometry import rot2d,rot3d
 from loss import haus_dist
 from tqdm import tqdm
 import time
+from sklearn.model_selection import GridSearchCV
+from classifiers import EuclideanDistClassifier
+from sklearn.metrics import make_scorer
 
-def grid_search(A,B,diam,size=50):
+def grid_search(A,B,diam,size=50,withTransform=False):
   bsquared = np.sum(B**2, axis=1)
   thetas = np.linspace(0,2*np.pi,size)
   b1s,b2s = np.linspace(-diam,diam,size),np.linspace(-diam,diam,size)
@@ -18,6 +21,9 @@ def grid_search(A,B,diam,size=50):
         for refl in reflMats:
           rot = rot2d(t)
           translate = np.array([b1,b2])
+          # print(A.shape)
+          # print(rot.shape)
+          # print(refl.shape)
           T = A@rot@refl + translate
           #t0 = time.time()
           d = haus_dist(T,B,b2=bsquared)
@@ -29,7 +35,33 @@ def grid_search(A,B,diam,size=50):
         #print("Inner loop time: ", outert1 - outert0)
         #print("dist time: ", t1 - t0)
         #print("dist % time: ", (t1-t0)/(outert1-outert0) * 100)
-  return best
+  if withTransform:
+    return best
+  else:
+    return best[0]
+
+def prod(a1,a2):
+  return [np.array([a,b]) for a in a1 for b in a2]
+def grid_search_sklearn(A,B,diam,size=50):
+  bsquared = np.sum(B**2, axis=1)
+  t0 = time.time()
+  rots = [rot2d(t) for t in  np.linspace(0,2*np.pi,size)]
+  shifts = prod(np.linspace(-diam,diam,size),np.linspace(-diam,diam,size))
+  reflMats = [np.eye(2),np.array([[-1.,0.],[0.,1.]])]
+  t1 = time.time()
+  print("Parallel GS setup time: ", t1-t0)
+  #print("Searching through ", len(thetas)*len(b1s)*len(b2s)*len(reflMats), "elements")
+  grid = {"rotation":rots,
+          "reflection":reflMats,
+          "shift":shifts}
+  model = EuclideanDistClassifier()
+  model.fit(A,B)
+  scorer = make_scorer(haus_dist, greater_is_better=False)
+  searcher = GridSearchCV(estimator=model,param_grid=grid,scoring=scorer, cv=( ((slice(None), slice(None)), )), n_jobs=4, verbose=3)
+  searcher.fit(A,B)
+  m = searcher.best_estimator_
+  score = searcher.best_score_
+  return (score,m.rotation,m.reflection,m.shift)
 
 def grid_search3d(A,B,size=50):
   def to_sphere(x,y):
