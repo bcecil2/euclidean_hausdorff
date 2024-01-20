@@ -1,74 +1,73 @@
 import numpy as np
 from scipy import spatial as sp
 from itertools import permutations
-from geometry import rot2d, refl2d, voronoi_bbox
+
+from points import Points
+from voronoi import Voronoi
 
 
 class PointCloud(object):
 
-    def __init__(self, points, bbox):
-        self.points = points
-        self.n, self.n_dim = points.shape
-        self.bbox = bbox
+    def __init__(self, coords, bbox=None, vor=None):
+        '''
+        :param coords: point coordinates, (n, n_dim)-array
+        :param bbox: bounding box coordinates, (n_dim, 2)-
+        :param vor: Voronoi tesselation of the bounding box induced by the points, Voronoi
+        '''
+        self.points = Points(coords)
 
         # Obtain Voronoi tesselation of the feasible region.
-        self.cells = voronoi_bbox(self.points, self.bbox)
+        if vor is None:
+            sp_vor = sp.Voronoi(coords)
+            self.vor = Voronoi(self.points, bbox, Points(sp_vor.vertices),
+                               sp_vor.ridge_vertices, sp_vor.ridge_points)
+        else:
+            self.vor = vor
 
-        # Sort Voronoi cells by their coordinate extremes.
-        self.mins = dict()
-        self.maxs = dict()
-        self.min_idxs = dict()
-        self.max_idxs = dict()
-        for dim in range(self.n_dim):
-            dim_mins = [np.min(cell[:, dim]) for cell in self.cells]
-            self.mins[dim], self.min_idxs[dim] = zip(*sorted(zip(dim_mins, range(self.n))))
-
-            dim_maxs = [np.max(cell[:, dim]) for cell in self.cells]
-            self.maxs[dim], self.max_idxs[dim] = zip(*sorted(zip(dim_maxs, range(self.n))))
-
-    def reflect(self, nontriv):
-        assert self.n_dim == 2, 'reflection in 3D not implemented'
-
-        return PointCloud(self.points @ refl2d(nontriv).T, self.bbox)
-
-    def rotate(self, theta):
-        assert self.n_dim == 2, 'rotation in 3D not implemented'
-
-        return PointCloud(self.points @ rot2d(theta).T, self.bbox)
-
-    def shift(self, delta):
-
-        return PointCloud(self.points + delta, self.bbox)
+        # Sort points by the coordinate extremes of their Voronoi cells.
+        min_sorting_idxs = np.argsort(self.vor.cell_min_coords, axis=0)
+        max_sorting_idxs = np.argsort(self.vor.cell_max_coords, axis=0)
+        self.mins = np.take_along_axis(self.vor.cell_min_coords, min_sorting_idxs, axis=0).T
+        self.maxs = np.take_along_axis(self.vor.cell_max_coords, max_sorting_idxs, axis=0).T
+        self.min_idxs = min_sorting_idxs.T.tolist()
+        self.max_idxs = max_sorting_idxs.T.tolist()
 
     def transform(self, nontriv_refl=None, theta=None, delta=None):
-        if nontriv_refl is None:
-            nontriv_refl = False
-        if theta is None:
-            theta = 0
-        if delta is None:
-            delta = np.zeros(self.n_dim)
+        new_points = self.points.transform(
+            nontriv_refl=nontriv_refl, theta=theta, delta=delta)
+        new_vor = self.vor.transform(
+            new_points, nontriv_refl=nontriv_refl, theta=theta, delta=delta)
 
-        return self.reflect(nontriv_refl).rotate(theta).shift(delta)
+        return PointCloud(new_points.coords, vor=new_vor)
 
     def d(self, point):
-        candidate_mask = np.full(self.n, True)
-        for dim in range(self.n_dim):
-            # Remove candidate cells whose min coordinate is after the point.
-            idx_end = np.searchsorted(self.mins[dim], point[dim], side='right')
-            candidates_to_remove = self.min_idxs[dim][idx_end:]
+        '''
+        Find distance from a point
 
-            # Remove candidate cells whose max coordinate is before the point.
-            idx_start = np.searchsorted(self.maxs[dim], point[dim], side='left')
-            candidates_to_remove += self.max_idxs[dim][:idx_start]
+        :param point: point coordinates (n_dim)-array
+        :return: distance
+        '''
+        candidate_mask = np.full(self.points.n, True)
+        # For each dimension...
+        for dim_mins, dim_min_idxs, dim_maxs, dim_max_idxs, coord in (
+                zip(self.mins, self.min_idxs, self.maxs, self.max_idxs, point)):
+            # Find points whose Voronoi cell's min coordinate is after the point.
+            idx_end = np.searchsorted(dim_mins, coord, side='right')
+            candidates_to_remove = dim_min_idxs[idx_end:]
 
-            candidate_mask[list(candidates_to_remove)] = False
+            # Find points whose Voronoi cell's max coordinate is before the point.
+            idx_start = np.searchsorted(dim_maxs, coord, side='left')
+            candidates_to_remove += dim_max_idxs[:idx_start]
 
-        dists = sp.distance.cdist([point], self.points[candidate_mask])
+            # Mask the above points.
+            candidate_mask[candidates_to_remove] = False
+
+        dists = sp.distance.cdist([point], self.points.coords[candidate_mask])
 
         return np.min(dists)
 
     def dH(self, other):
-        dH_to, dH_from = [max(A.d(p) for p in B.points)
+        dH_to, dH_from = [max(A.d(p) for p in B.points.coords)
                           for A, B in permutations([self, other])]
 
         return max(dH_to, dH_from)
