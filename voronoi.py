@@ -34,7 +34,7 @@ class Voronoi(object):
         self.cell_vert_1st_idxs = []
         self.unb_cell_idxs = []
         self.unb_vert_idxs = []
-        self.unb_p1_idxs = [] # same as unb_cell_idxs but repeated
+        self.unb_p1_idxs = []   # same as unb_cell_idxs but repeated
         self.unb_p2_idxs = []
         self.bbox_vert_1st_idxs = []
         cell_1st_idx = unb_1st_idx = 0
@@ -81,9 +81,13 @@ class Voronoi(object):
         unb_cell_max_coords = np.full((n_unb_cells, points.n_dim), -np.inf)
         unb_vert_coords = self.vertices.coords[self.unb_vert_idxs]
         unb_midp_coords = (points.coords[self.unb_p1_idxs] + points.coords[self.unb_p2_idxs]) / 2
-        assert not np.isclose(unb_vert_coords, unb_midp_coords).all(axis=1).any(), \
-            f'unbounded ridge vertex coincides with its (p1+p2)/2'
-        directions = unb_midp_coords - unb_vert_coords
+        tangents = points.coords[self.unb_p1_idxs] - points.coords[self.unb_p2_idxs]
+        tangents /= np.linalg.norm(tangents, axis=1)[:, None]
+        normals = np.array([-tangents[:, 1], tangents[:, 0]]).T   # TODO: implement for 3d
+        centroid = points.coords.mean(axis=0)
+        cosines = np.sum((unb_midp_coords - centroid) * normals, axis=1)
+        directions = np.sign(cosines)[:, None] * normals
+
         # Find the times for unbounded ridges to reach each bounding plane.
         ts = np.concatenate((self.bbox_coords[:, None] - unb_vert_coords) / directions, axis=1)
         # Find the first bounding plane reached by each unbounded ridge.
