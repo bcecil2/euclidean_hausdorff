@@ -1,6 +1,5 @@
 import numpy as np
 from scipy import spatial as sp
-from itertools import permutations
 
 from points import Points
 from voronoi import Voronoi
@@ -29,8 +28,8 @@ class PointCloud(object):
         max_sorting_idxs = np.argsort(self.vor.cell_max_coords, axis=0)
         self.mins = np.take_along_axis(self.vor.cell_min_coords, min_sorting_idxs, axis=0).T
         self.maxs = np.take_along_axis(self.vor.cell_max_coords, max_sorting_idxs, axis=0).T
-        self.min_idxs = min_sorting_idxs.T.tolist()
-        self.max_idxs = max_sorting_idxs.T.tolist()
+        self.min_idxs = min_sorting_idxs.T
+        self.max_idxs = max_sorting_idxs.T
 
     def transform(self, nontriv_refl=None, theta=None, delta=None):
         new_points = self.points.transform(
@@ -40,34 +39,36 @@ class PointCloud(object):
 
         return PointCloud(new_points.coords, vor=new_vor)
 
-    def d(self, point):
+    def dH_directional(self, other):
         '''
-        Find distance from a point
+        Find directed Hausdorff distance from a point cloud
 
-        :param point: point coordinates (n_dim)-array
+        :param other: another point cloud, PointCloud
         :return: distance
         '''
-        candidate_mask = np.full(self.points.n, True)
+        candidate_mask = np.full((other.points.n, self.points.n), True)
+        candidate_idxs = np.arange(self.points.n)
         # For each dimension...
-        for dim_mins, dim_min_idxs, dim_maxs, dim_max_idxs, coord in (
-                zip(self.mins, self.min_idxs, self.maxs, self.max_idxs, point)):
-            # Find points whose Voronoi cell's min coordinate is after the point.
-            idx_end = np.searchsorted(dim_mins, coord, side='right')
-            candidates_to_remove = dim_min_idxs[idx_end:]
+        for dim_mins, dim_min_idxs, dim_maxs, dim_max_idxs, dim_coords in (
+                zip(self.mins, self.min_idxs, self.maxs, self.max_idxs, other.points.coords.T)):
+            # Discard points whose Voronoi cell's min coordinate is after the other's point.
+            idx_ends = np.searchsorted(dim_mins, dim_coords, side='right')
+            other_idxs, sorted_cell_idxs = np.where(candidate_idxs >= idx_ends[:, None])
+            candidate_mask[other_idxs, dim_min_idxs[sorted_cell_idxs]] = False
 
-            # Find points whose Voronoi cell's max coordinate is before the point.
-            idx_start = np.searchsorted(dim_maxs, coord, side='left')
-            candidates_to_remove += dim_max_idxs[:idx_start]
+            # Discard points whose Voronoi cell's max coordinate is before the other's point.
+            idx_starts = np.searchsorted(dim_maxs, dim_coords, side='left')
+            other_idxs, sorted_cell_idxs = np.where(candidate_idxs < idx_starts[:, None])
+            candidate_mask[other_idxs, dim_max_idxs[sorted_cell_idxs]] = False
 
-            # Mask the above points.
-            candidate_mask[candidates_to_remove] = False
+        other_idxs, candidate_idxs = np.where(candidate_mask)
+        deltas = other.points.coords[other_idxs] - self.points.coords[candidate_idxs]
+        distances_to_candidates = np.sum(deltas**2, axis=1)**.5
+        ns_candidates = candidate_mask.sum(axis=1)
+        other_dlm_idxs = np.insert(np.cumsum(ns_candidates)[:-1], 0, 0)
+        distances = np.minimum.reduceat(distances_to_candidates, other_dlm_idxs)
 
-        dists = sp.distance.cdist([point], self.points.coords[candidate_mask])
-
-        return np.min(dists)
+        return np.max(distances)
 
     def dH(self, other):
-        dH_to, dH_from = [max(A.d(p) for p in B.points.coords)
-                          for A, B in permutations([self, other])]
-
-        return max(dH_to, dH_from)
+        return max(self.dH_directional(other), other.dH_directional(self))
