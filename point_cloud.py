@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import spatial as sp
+from itertools import product
 
 from points import Points
 from voronoi import Voronoi
@@ -13,23 +14,82 @@ class PointCloud(object):
         :param bbox: bounding box coordinates, (n_dim, 2)-
         :param vor: Voronoi tesselation of the bounding box induced by the points, Voronoi
         '''
-        self.points = Points(coords)
+        self.orig_centroid = coords.mean(axis=0)
+        self.points = Points(coords - self.orig_centroid)
 
         # Obtain Voronoi tesselation of the feasible region.
         if vor is None:
-            sp_vor = sp.Voronoi(coords)
+            sp_vor = sp.Voronoi(self.points.coords)
             self.vor = Voronoi(self.points, bbox, Points(sp_vor.vertices),
                                sp_vor.ridge_vertices, sp_vor.ridge_points)
         else:
             self.vor = vor
 
         # Sort points by the coordinate extremes of their Voronoi cells.
-        min_sorting_idxs = np.argsort(self.vor.cell_min_coords, axis=0)
-        max_sorting_idxs = np.argsort(self.vor.cell_max_coords, axis=0)
-        self.mins = np.take_along_axis(self.vor.cell_min_coords, min_sorting_idxs, axis=0).T
-        self.maxs = np.take_along_axis(self.vor.cell_max_coords, max_sorting_idxs, axis=0).T
-        self.min_idxs = min_sorting_idxs.T
-        self.max_idxs = max_sorting_idxs.T
+        min_sorting_idxs = np.argsort(self.vor.cell_min_coords, axis=0).T
+        max_sorting_idxs = np.argsort(self.vor.cell_max_coords, axis=0).T
+        mins = np.take_along_axis(self.vor.cell_min_coords.T, min_sorting_idxs, axis=1)
+        maxs = np.take_along_axis(self.vor.cell_max_coords.T, max_sorting_idxs, axis=1)
+
+        # Initialize grid-based data structures for O(log n) point location.
+        n, n_dim = self.points.n, self.points.n_dim
+        approx_n_points_per_box_side = n ** (1 / n_dim)
+        grid_resolution = round(np.ceil(np.log2(approx_n_points_per_box_side)))
+        parent_gridcell = (0,) * n_dim
+        mins_by_gridcell = {parent_gridcell: mins}
+        maxs_by_gridcell = {parent_gridcell: maxs}
+        min_sorting_idxs_by_gridcell = {parent_gridcell: min_sorting_idxs}
+        max_sorting_idxs_by_gridcell = {parent_gridcell: max_sorting_idxs}
+        self.point_idxs_by_gridcell = {parent_gridcell: np.arange(n)}
+
+        # Fill in the data structures on the dyadic grid at incremental resolution for efficiency.
+        for k in range(1, grid_resolution):
+            new_point_idxs_by_gridcell = dict()
+            new_mins_by_gridcell = dict()
+            new_maxs_by_gridcell = dict()
+            new_min_sorting_idxs_by_gridcell = dict()
+            new_max_sorting_idxs_by_gridcell = dict()
+            self.gridcell_sides = np.diff(self.vor.bbox).flatten() / 2**k
+            # For each grid cell, find points whose Voronoi cells overlap it by
+            # refining those for the parent grid cell.
+            for gridcell in product(range(2**k), repeat=n_dim):
+                gridcell_arr = np.array(gridcell)
+                gridcell_start = self.vor.bbox_coords[0] + self.gridcell_sides * gridcell_arr
+                gridcell_end = gridcell_start + self.gridcell_sides
+
+                # Identify points whose Voronoi cells overlap the grid cell.
+                parent_gridcell = tuple(gridcell_arr // 2)
+                mins = mins_by_gridcell[parent_gridcell]
+                min_sorting_idxs = min_sorting_idxs_by_gridcell[parent_gridcell]
+                maxs = maxs_by_gridcell[parent_gridcell]
+                max_sorting_idxs = max_sorting_idxs_by_gridcell[parent_gridcell]
+                point_idxs = self.point_idxs_by_gridcell[parent_gridcell]
+                for dim in range(n_dim):
+                    # Discard points whose Voronoi cell's min coordinate is after the grid cell.
+                    is_min_retained = np.isin(min_sorting_idxs[dim], point_idxs)
+                    idx_end = np.searchsorted(mins[dim][is_min_retained],
+                                              gridcell_end[dim], side='right')
+                    point_idxs = min_sorting_idxs[dim][is_min_retained][:idx_end]
+
+                    # Discard points whose Voronoi cell's max coordinate is before the grid cell.
+                    is_max_retained = np.isin(max_sorting_idxs[dim], point_idxs)
+                    idx_start = np.searchsorted(maxs[dim][is_max_retained],
+                                                gridcell_start[dim], side='left')
+                    point_idxs = max_sorting_idxs[dim][is_max_retained][idx_start:]
+
+                new_point_idxs_by_gridcell[gridcell] = point_idxs
+                is_min_retained = np.isin(min_sorting_idxs, point_idxs)
+                new_mins_by_gridcell[gridcell] = mins[is_min_retained].reshape(n_dim, -1)
+                new_min_sorting_idxs_by_gridcell[gridcell] = min_sorting_idxs[is_min_retained].reshape(n_dim, -1)
+                is_max_retained = np.isin(max_sorting_idxs, point_idxs)
+                new_maxs_by_gridcell[gridcell] = maxs[is_max_retained].reshape(n_dim, -1)
+                new_max_sorting_idxs_by_gridcell[gridcell] = max_sorting_idxs[is_max_retained].reshape(n_dim, -1)
+
+            mins_by_gridcell = new_mins_by_gridcell
+            maxs_by_gridcell = new_maxs_by_gridcell
+            min_sorting_idxs_by_gridcell = new_min_sorting_idxs_by_gridcell
+            max_sorting_idxs_by_gridcell = new_max_sorting_idxs_by_gridcell
+            self.point_idxs_by_gridcell = new_point_idxs_by_gridcell
 
     def transform(self, nontriv_refl=None, theta=None, delta=None):
         new_points = self.points.transform(
@@ -46,25 +106,22 @@ class PointCloud(object):
         :param other: another point cloud, PointCloud
         :return: distance
         '''
-        candidate_mask = np.full((other.points.n, self.points.n), True)
-        candidate_idxs = np.arange(self.points.n)
-        # For each dimension...
-        for dim_mins, dim_min_idxs, dim_maxs, dim_max_idxs, dim_coords in (
-                zip(self.mins, self.min_idxs, self.maxs, self.max_idxs, other.points.coords.T)):
-            # Discard points whose Voronoi cell's min coordinate is after the other's point.
-            idx_ends = np.searchsorted(dim_mins, dim_coords, side='right')
-            other_idxs, sorted_cell_idxs = np.where(candidate_idxs >= idx_ends[:, None])
-            candidate_mask[other_idxs, dim_min_idxs[sorted_cell_idxs]] = False
+        # Compute grid cell indices of the points in other.
+        other_gridcells_arr = ((other.points.coords - self.vor.bbox_coords[0]) //
+                               self.gridcell_sides).astype(int)
+        other_gridcells = map(tuple, other_gridcells_arr.tolist())
 
-            # Discard points whose Voronoi cell's max coordinate is before the other's point.
-            idx_starts = np.searchsorted(dim_maxs, dim_coords, side='left')
-            other_idxs, sorted_cell_idxs = np.where(candidate_idxs < idx_starts[:, None])
-            candidate_mask[other_idxs, dim_max_idxs[sorted_cell_idxs]] = False
+        # Obtain and arrange indices of own candidate points corresponding to these grid cells.
+        candidate_idxs_by_other_idx = list(map(self.point_idxs_by_gridcell.get, other_gridcells))
+        ns_candidates = list(map(len, candidate_idxs_by_other_idx))
+        candidate_idxs = np.concatenate(candidate_idxs_by_other_idx)
+        other_idxs = np.repeat(np.arange(other.points.n), ns_candidates)
 
-        other_idxs, candidate_idxs = np.where(candidate_mask)
+        # Compute distances from the points in other to their respective candidate points.
         deltas = other.points.coords[other_idxs] - self.points.coords[candidate_idxs]
         distances_to_candidates = np.sum(deltas**2, axis=1)**.5
-        ns_candidates = candidate_mask.sum(axis=1)
+
+        # Choose the nearest candidate for every point in other.
         other_dlm_idxs = np.insert(np.cumsum(ns_candidates)[:-1], 0, 0)
         distances = np.minimum.reduceat(distances_to_candidates, other_dlm_idxs)
 
