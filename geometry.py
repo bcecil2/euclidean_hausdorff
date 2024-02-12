@@ -3,6 +3,7 @@ from scipy import spatial as sp
 from itertools import combinations
 
 def rot2d(theta):
+  theta = theta[0]
   return np.array([[np.cos(theta),-np.sin(theta)],[np.sin(theta),np.cos(theta)]])
 
 def rot3d(n,theta):
