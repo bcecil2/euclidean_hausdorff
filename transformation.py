@@ -15,4 +15,4 @@ class Transformation(object):
         self.is_reflection = bool(is_reflection)
 
     def invert(self):
-        return Transformation(-self.angle, -self.shift, not self.is_reflection)
+        return Transformation(-self.angle, -self.shift, self.is_reflection)
