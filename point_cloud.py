@@ -6,21 +6,25 @@ from points import Points
 
 class PointCloud(object):
 
-    def __init__(self, coords, kd_tree=None):
+    def __init__(self, coords, build_kd_tree=True):
         '''
-        :param coords: point coordinates, (n, n_dim)-array
-        :param kd_tree: k-d tree induced by the non-transformed points (or None to be computed)
+        :param coords: point coordinates, (n, k)-array
+        :param kd_tree: k-d tree to speed up Hausdorff distance (or None to be computed)
         '''
         self.orig_centroid = coords.mean(axis=0)
         self.points = Points(coords - self.orig_centroid)
 
-        # Obtain Voronoi tesselation of the feasible region.
-        self.kd_tree = kd_tree or sp.KDTree(self.points.coords)
+        if build_kd_tree:
+            # Build k-d tree on the non-transformed points.
+            self.kd_tree = sp.KDTree(self.points.coords)
 
     def transform(self, T):
         transformed_points = self.points.transform(T)
+        transformed_self = PointCloud(transformed_points.coords, build_kd_tree=False)
+        transformed_self.orig_centroid = self.orig_centroid
+        transformed_self.kd_tree = self.kd_tree
 
-        return PointCloud(transformed_points.coords, kd_tree=self.kd_tree)
+        return transformed_self
 
     def asymm_dH(self, other):
         '''
