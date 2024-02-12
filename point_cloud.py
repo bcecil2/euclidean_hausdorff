@@ -29,11 +29,7 @@ class PointCloud(object):
         :param other: another point cloud, PointCloud
         :return: distance
         '''
-        # Find indices of nearest neighbors among the points of other.
-        _, other_idxs = other.kd_tree.query(self.points.coords, workers=-1)
-
         # Compute distances to the nearest neighbors in other.
-        diffs = self.points.coords - other.points.coords[other_idxs]
-        distances = np.sum(diffs**2, axis=1)**.5
+        distances_to_other, _ = other.kd_tree.query(self.points.coords, workers=-1)
 
-        return np.max(distances)
+        return np.max(distances_to_other)
