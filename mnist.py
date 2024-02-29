@@ -4,12 +4,13 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from EuclideanSimModel import EuclideanSim
+from tqdm import tqdm
+
 #return 3 tuples of (x,y) for train, val, test
-def getMnist(train=0.1,val=0.1,test=0.1, norm=True):
+def getMnist(train=0.1,val=0.1,test=1,):
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
-    if norm:
-        x_train = [im2points(x) for x in x_train]
-        x_test = [im2points(x) for x in x_test]
+    x_train = [im2points(x) for x in x_train]
+    x_test = [im2points(x) for x in x_test]
 
     trainSize = len(x_train)
     testSize = len(x_test)
@@ -17,6 +18,7 @@ def getMnist(train=0.1,val=0.1,test=0.1, norm=True):
     trainIdx = int(trainSize*train)
     valIdx = int(trainSize*val)
     testIdx = int(testSize*test)
+
 
     trainSplit = (x_train[:trainIdx], y_train[:trainIdx])
     valSplit = (x_train[trainIdx:trainIdx+valIdx], y_train[trainIdx:trainIdx+valIdx])
@@ -43,10 +45,10 @@ def testSplits():
     #make sure last image in train isnt in val
     assert np.all(train[1][-1] != val[1][0])
 
-def topK(x,y,k):
+def topK(xs,ys,k):
     from collections import defaultdict
     d = defaultdict(list)
-    for x,y in zip(x,y):
+    for x,y in zip(xs,ys):
         if len(d[y]) < k:
             d[y].append(x)
     return d
@@ -58,29 +60,18 @@ def plotImage(X):
 def im2points(X):
     xs,ys = np.nonzero(X)
     return np.stack([xs,ys],axis=-1)
-def normalize(X):
-    N = X/np.max(X)
-    return N
+
+def trainAndValidate(trainSet,valSet,size,k):
+    params = {"grid_size": size}
+    buckets = topK(*trainSet, k)
+    valSet = list(zip(valSet[0],valSet[1]))
+    model = EuclideanSim(buckets, params)
+    count = 0
+    for x,y in tqdm(valSet):
+       pred = model.similarity(x)
+       count += pred == y
+    return count/len(valSet)
+
 if __name__ == "__main__":
-    train,val,test = getMnist()
-    buckets = topK(*train,3)
-    params = {"diam":2,"size":10}
-    model = EuclideanSim(buckets,params)
-    from loss import haus_dist
-    A = buckets[1][0]
-    B = buckets[1][1]
-    #print(np.max(A))
-    #print(haus_dist(A, B, diam=True))
-    print(model.similarity(A))
-    plotImage(A)
-    plt.show()
-
-
-    """
-    take train data and bucket based on label
-    use top k elements
-    for any new data point
-     compute its distance from top k
-     aggregate i.e max,min average
-     assign to bucket with smallest distance
-    """
+    train,val,test = getMnist(val=0.01)
+    print(trainAndValidate(train,val,size=2,k=1))

@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.spatial as sp
 
 def haus_dist(A,B,b2=None,diam=False):
   asqr = np.sum(A**2, axis=1)
@@ -11,3 +12,13 @@ def haus_dist(A,B,b2=None,diam=False):
     return haus_d,np.max(dists)
   else:
     return haus_d
+
+def scipyHausDist(A, B):
+    m = sp.distance.directed_hausdorff(A, B)[0]
+    n = sp.distance.directed_hausdorff(B, A)[0]
+    return max(m, n)
+
+
+def fastHD(A, B, T):
+    return max(A.transform(T).asymm_dH(B),
+                B.transform(T.invert()).asymm_dH(A))

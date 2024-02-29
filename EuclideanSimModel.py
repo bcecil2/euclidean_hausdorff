@@ -1,9 +1,9 @@
 import numpy as np
-from optimizers import grid_search
+from optimizers import grid_search,grid_search_3d
 
 class EuclideanSim:
 
-    def __init__(self, buckets, dist_params, aggregator=max, dist_computer=grid_search):
+    def __init__(self, buckets, dist_params, aggregator=np.mean, dim=2):
         """
 
         :param buckets: dict of (label,[point clouds]) where the list is the top k representatives of a given class
@@ -12,7 +12,7 @@ class EuclideanSim:
         :param aggregator: aggregation function to be applied to each bucket, should take a list of floats and return a non negative float
         """
         self.buckets = buckets
-        self.dist = dist_computer
+        self.dist = grid_search if dim == 2 else grid_search_3d
         self.params = dist_params
         self.agg = aggregator
 
@@ -25,6 +25,7 @@ class EuclideanSim:
         argMin = (0,1e9)
         for label,items in self.buckets.items():
             results = [self.dist(A, Y, **self.params) for Y in items]
+            #print("Results for bucket ", label, results)
             m = self.agg(results)
             if m < argMin[1]:
                 argMin = (label,m)

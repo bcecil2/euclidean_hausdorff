@@ -1,47 +1,71 @@
 import numpy as np
 from geometry import rot2d,rot3d
-from loss import haus_dist
+from loss import haus_dist,fastHD
 from tqdm import tqdm
-import time
+from time import perf_counter
 from sklearn.model_selection import GridSearchCV
 from classifiers import EuclideanDistClassifier
 from sklearn.metrics import make_scorer
+from scipy import spatial as sp
+from point_cloud import PointCloud
+from transformation import Transformation
+from itertools import product
 
-def grid_search(A,B,diam,size=50,withTransform=False):
-  bsquared = np.sum(B**2, axis=1)
-  thetas = np.linspace(0,2*np.pi,size)
-  b1s,b2s = np.linspace(-diam,diam,size),np.linspace(-diam,diam,size)
-  reflMats = [np.eye(2),np.array([[-1.,0.],[0.,1.]])]
-  print("Searching through ", len(thetas)*len(b1s)*len(b2s)*len(reflMats), "elements")
-  best = (1e6,None,None,None)
-  for t in tqdm(thetas):
-    for b1 in b1s:
-      for b2 in b2s:
-        #outert0 = time.time()
-        for refl in reflMats:
-          rot = rot2d(t)
-          translate = np.array([b1,b2])
-          # print(A.shape)
-          # print(rot.shape)
-          # print(refl.shape)
-          T = A@rot@refl + translate
-          #t0 = time.time()
-          d = haus_dist(T,B,b2=bsquared)
-          #t1 = time.time()
 
-          if d < best[0]:
-            best = (d,rot,refl,translate)
-        #outert1 = time.time()
-        #print("Inner loop time: ", outert1 - outert0)
-        #print("dist time: ", t1 - t0)
-        #print("dist % time: ", (t1-t0)/(outert1-outert0) * 100)
-  if withTransform:
-    return best
-  else:
-    return best[0]
+def to_sphere(x, y):
+  return (np.sin(x) * np.cos(y), np.sin(x) * np.sin(y), np.cos(x))
 
-def prod(a1,a2):
-  return [np.array([a,b]) for a in a1 for b in a2]
+def cartesian_product(*arrays):
+  la = len(arrays)
+  dtype = np.result_type(*arrays)
+  arr = np.empty([len(a) for a in arrays] + [la], dtype=dtype)
+  for i, a in enumerate(np.ix_(*arrays)):
+    arr[..., i] = a
+  return arr.reshape(-1, la)
+
+def diam(coords):
+  hull = sp.ConvexHull(coords)
+  hull_coords = coords[hull.vertices]
+  candidate_distances = sp.distance.cdist(hull_coords, hull_coords)
+  return candidate_distances.max()
+
+def grid_search(A,B,grid_size=50):
+  A, B = PointCloud(A),PointCloud(B)
+  max_shift = max(diam(A.points.coords),diam(B.points.coords))
+  xshifts = np.linspace(-max_shift, max_shift, grid_size)
+  yshifts = np.linspace(-max_shift, max_shift, grid_size)
+  thetas = np.linspace(0, 2 * np.pi, grid_size, endpoint=False)
+  def hd(p):
+    T = Transformation([p[0], p[1]], [p[2]], p[3])
+    return fastHD(A, B, T)
+  f = np.vectorize(hd,signature='(4)->()')
+  grid = cartesian_product(xshifts,yshifts,thetas,np.array([0,1]))
+  return f(grid).min()
+
+
+
+def grid_search_3d(A,B,grid_size=5):
+  A, B = PointCloud(A), PointCloud(B)
+
+  max_shift = max(diam(A.points.coords), diam(B.points.coords))
+  xshifts = np.linspace(-max_shift, max_shift, grid_size)
+  yshifts = np.linspace(-max_shift, max_shift, grid_size)
+  zshifts = np.linspace(-max_shift, max_shift, grid_size)
+  thetas = np.linspace(0, 2 * np.pi, grid_size, endpoint=False)
+  phis = np.linspace(0, 2 * np.pi, grid_size, endpoint=False)
+  rhos = np.linspace(0, 2 * np.pi, grid_size, endpoint=False)
+
+  def hd(p):
+    n = to_sphere(p[0], p[1])
+    theta = p[2]
+    translate = [p[3],p[4],p[5]]
+    reflect = p[6]
+    T = Transformation(translate, [n,theta], reflect)
+    return fastHD(A, B, T)
+  f = np.vectorize(hd, signature='(7)->()')
+  grid = cartesian_product(xshifts, yshifts, zshifts, thetas, phis, rhos, np.array([0, 1]))
+  return f(grid).min()
+
 def grid_search_sklearn(A,B,diam,size=50):
   bsquared = np.sum(B**2, axis=1)
   t0 = time.time()
@@ -63,33 +87,4 @@ def grid_search_sklearn(A,B,diam,size=50):
   score = searcher.best_score_
   return (score,m.rotation,m.reflection,m.shift)
 
-def grid_search3d(A,B,size=50):
-  def to_sphere(x,y):
-    return (np.sin(x)*np.cos(y),np.sin(x)*np.sin(y),np.cos(x))
 
-  thetas = np.linspace(0,np.pi,size)
-  phis = np.linspace(0,2*np.pi,size)
-  rhos = np.linspace(0,2*np.pi,size)
-
-  b1s,b2s,b3s = np.linspace(0,1,size),np.linspace(0,1,size),np.linspace(0,1,size)
-  reflMats = [np.eye(3),-np.eye(3)]
-  best = (1e6,None,None,None)
-  p = 1
-  for x in [thetas,phis,rhos,b1s,b2s,b3s,reflMats]:
-    p *= len(x)
-  print("Beginning search through: ", p, " elements")
-  for t in thetas:
-    for p in phis:
-      for r in rhos:
-        for b1 in b1s:
-          for b2 in b2s:
-            for b3 in b3s:
-              for refl in reflMats:
-                n = to_sphere(t,p)
-                rot = rot3d(n,r)
-                translate = np.array([b1,b2,b3])
-                T = A@rot@refl + translate
-                d = haus_dist(T,B)
-                if d < best[0]:
-                  best = (d,rot,refl,translate)
-  return best
