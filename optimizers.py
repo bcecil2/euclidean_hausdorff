@@ -31,7 +31,7 @@ def diam(coords):
 
 def grid_search(A,B,grid_size=50):
   A, B = PointCloud(A),PointCloud(B)
-  max_shift = max(diam(A.points.coords),diam(B.points.coords))
+  max_shift = max(diam(A.coords), diam(B.coords))
   xshifts = np.linspace(-max_shift, max_shift, grid_size)
   yshifts = np.linspace(-max_shift, max_shift, grid_size)
   thetas = np.linspace(0, 2 * np.pi, grid_size, endpoint=False)
@@ -47,7 +47,7 @@ def grid_search(A,B,grid_size=50):
 def grid_search_3d(A,B,grid_size=5):
   A, B = PointCloud(A), PointCloud(B)
 
-  max_shift = max(diam(A.points.coords), diam(B.points.coords))
+  max_shift = max(diam(A.coords), diam(B.coords))
   xshifts = np.linspace(-max_shift, max_shift, grid_size)
   yshifts = np.linspace(-max_shift, max_shift, grid_size)
   zshifts = np.linspace(-max_shift, max_shift, grid_size)
@@ -85,6 +85,6 @@ def grid_search_sklearn(A,B,diam,size=50):
   searcher.fit(A,B)
   m = searcher.best_estimator_
   score = searcher.best_score_
-  return (score,m.rotation,m.reflection,m.shift)
+  return (score, m.rotation, m.do_reflect, m.translate)
 
 
