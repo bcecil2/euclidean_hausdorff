@@ -22,6 +22,10 @@ def make_grid(center, cell_size, cube_size, ball_rad):
     n_cells = int(np.ceil(cube_size / cell_size))
     cell_size = cube_size / n_cells
 
+    # Calculate covering radius.
+    k = len(center)
+    covering_rad = np.sqrt(k) * cell_size / 2
+
     # Calculate vertex positions separately in each dimension.
     vert_offsets = np.linspace(-(cube_size-cell_size)/2, (cube_size-cell_size)/2, n_cells)
     vert_positions = np.add.outer(center, vert_offsets)
@@ -32,14 +36,18 @@ def make_grid(center, cell_size, cube_size, ball_rad):
 
     # Retain only the vertices covering the ball.
     lengths = np.linalg.norm(vertex_coords, axis=1)
-    # TODO: exceed ball_rad by one "layer" of the grid to cover the boundary, then
-    # TODO: project the outside points onto the boundary.
-    vertex_coords = vertex_coords[lengths <= ball_rad]
+    is_covering = lengths <= ball_rad + covering_rad
+    vertex_coords = vertex_coords[is_covering]
+    lengths = lengths[is_covering]
+
+    # Project vertices outside of the ball onto the ball.
+    is_outside = lengths > ball_rad
+    vertex_coords[is_outside] /= lengths[is_outside][:, None]
 
     return vertex_coords, cell_size
 
 
-def approx_eucl_haus(A_coords, B_coords, alpha, proper_rigid=False, verbose=False):
+def approx_eucl_haus(A_coords, B_coords, alpha, proper_rigid=False, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance.
 
@@ -47,6 +55,7 @@ def approx_eucl_haus(A_coords, B_coords, alpha, proper_rigid=False, verbose=Fals
     :param B_coords: points of B, (?×k)-array
     :param alpha: (upper bound of) additive approximation error, float
     :param proper_rigid: whether to consider only proper rigid transformations, bool
+    :param verbose: detalization level in the output, int
     :return: approximate distance
     """
     A, B = PointCloud(A_coords), PointCloud(B_coords)
