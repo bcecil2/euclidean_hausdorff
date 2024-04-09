@@ -47,13 +47,16 @@ def make_grid(center, cell_size, cube_size, ball_rad):
     return vertex_coords, cell_size
 
 
-def approx_eucl_haus(A_coords, B_coords, alpha, proper_rigid=False, verbose=0):
+def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=1, improv_margin=.001,
+                     proper_rigid=False, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance.
 
     :param A_coords: points of A, (?×k)-array
     :param B_coords: points of B, (?×k)-array
-    :param alpha: (upper bound of) additive approximation error, float
+    :param target_err: (upper bound of) additive approximation error, float
+    :param max_no_improv: maximum number of iterations without improvement, int
+    :param improv_margin: relative
     :param proper_rigid: whether to consider only proper rigid transformations, bool
     :param verbose: detalization level in the output, int
     :return: approximate distance
@@ -64,23 +67,15 @@ def approx_eucl_haus(A_coords, B_coords, alpha, proper_rigid=False, verbose=0):
     _, k = normalized_coords.shape
     assert k in {2, 3}, 'only 2D and 3D spaces are supported'
     r = np.linalg.norm(normalized_coords, axis=1).max()
+    if verbose:
+        print(f'{r=:.5f}, max diam={max(map(lambda x: diam(x.coords), [A, B])):.5f}')
 
     # Calculate initial cell sizes/covering radii for ∆ and P .
     a_delta, a_rho = 2*r, 2
     eps_delta, eps_rho = np.array([a_delta, a_rho]) * np.sqrt(k) / 2
 
-    def dH_diff_ub(delta_diff, rho_diff):
+    def calc_dH_diff_ub(delta_diff, rho_diff):
         return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
-
-    # Calculate maximum dyadic grid depth m.
-    m = 1
-    while dH_diff_ub(eps_delta / 2**m, eps_rho / 2**m) > alpha:
-        m += 1
-
-    if verbose:
-        print(f'{r=:.5f}, max diam={max(map(lambda x: diam(x.coords), [A, B])):.5f}')
-        for l in range(m):
-            print(f'level {l}, pruning offset {dH_diff_ub(eps_delta / 2**l, eps_rho / 2**l):.5f}')
 
     def zoom_in(point, level):
         delta_center, rho_center = point[:k], point[k:]
@@ -94,54 +89,73 @@ def approx_eucl_haus(A_coords, B_coords, alpha, proper_rigid=False, verbose=0):
     best_dH = np.inf
     sigmas = [False] if proper_rigid else [False, True]
     for sigma in sigmas:
-        def dH(grid_point):
+        def calc_dH(grid_point):
             T = Transformation(grid_point[:k], grid_point[k:], sigma)
             return max(A.transform(T).asymm_dH(B),
                        B.transform(T.invert()).asymm_dH(A))
 
-        # Create a sorted (by dH) queue of grid points to zoom in on or prune for each level.
-        Qs = [SortedList() for _ in range(m)]
+        # Create a list of sorted (by dH) queues of grid points to zoom in on or prune for each level.
         grid_center = np.zeros(k + k * (k-1) // 2)
-        Qs[0].add((dH(grid_center), tuple(grid_center)))
-        level = shallowest_level = 0
-        # Multiscale search until all points of level < m are zoomed in on or pruned,
-        # or the desired accuracy is trivially achieved.
-        while sum(map(len, Qs[shallowest_level:])) > 0 and best_dH > alpha:
+        Qs = [SortedList([(calc_dH(grid_center), tuple(grid_center))])]
+        lvl = min_unexpl_lvl = 0
+        n_no_improv = 0
+        err_ub = np.inf
+        # Multiscale search until achieved the target accuracy (or searched the maximum number of
+        # grid points without improvement in a row, if the target accuracy is not set).
+        while (target_err and err_ub > target_err) or (not target_err and n_no_improv < max_no_improv):
             if verbose > 1:
-                print(f'{best_dH=:.5f}, Qs={list(map(len, Qs))}')
+                print(f'{best_dH=:.5f}, {err_ub=:.5f}, {n_no_improv=}, Qs={list(map(len, Qs))}')
 
-            _, grid_point = Qs[level].pop(0)
-            if not Qs[level] and level == shallowest_level:
-                shallowest_level += 1
+            _, grid_point = Qs[lvl].pop(0)
+            if not Qs[lvl] and lvl == min_unexpl_lvl:
+                min_unexpl_lvl += 1
                 if verbose:
-                    print(f'{shallowest_level=}/{m}')
+                    print(f'{min_unexpl_lvl=}/{len(Qs)}')
 
             # Zoom in on the currently best grid point.
-            children = zoom_in(np.array(grid_point), level)
-            level += 1
-            children_dH = list(map(dH, children))
+            children = zoom_in(np.array(grid_point), lvl)
+            lvl += 1
+            children_dH = list(map(calc_dH, children))
             best_child_dH = min(children_dH)
-            if level < m:
-                Qs[level].update(zip(children_dH, map(tuple, children)))
+            try:
+                Q = Qs[lvl]
+            except IndexError:
+                Q = SortedList()
+                Qs.append(Q)
+            Q.update(zip(children_dH, map(tuple, children)))
 
-            if best_child_dH < best_dH:
+            if best_child_dH < best_dH * (1 - improv_margin):
+                # Reset the counter of no-improvement iterations.
+                n_no_improv = 0
+
                 # Prune grid points zooming in on which cannot improve best dH.
-                for l in range(shallowest_level, m):
-                    dH_thresh = best_child_dH + dH_diff_ub(eps_delta / 2**l, eps_rho / 2**l)
-                    n_points_to_retain = Qs[l].bisect_left((dH_thresh, ))    # retain if < dH_thresh
-                    for _ in range(len(Qs[l]) - n_points_to_retain):
-                        Qs[l].pop()
-                    if n_points_to_retain == 0 and l == shallowest_level:
-                        shallowest_level += 1
+                for prune_lvl in range(min_unexpl_lvl, len(Qs)):
+                    prune_lvl_err_ub = calc_dH_diff_ub(eps_delta / 2**prune_lvl, eps_rho / 2**prune_lvl)
+                    prune_thresh = best_child_dH + prune_lvl_err_ub
+                    n_points_to_retain = Qs[prune_lvl].bisect_left((prune_thresh, ))
+                    for _ in range(len(Qs[prune_lvl]) - n_points_to_retain):
+                        Qs[prune_lvl].pop()
+                    if not Qs[prune_lvl] and prune_lvl == min_unexpl_lvl:
+                        min_unexpl_lvl += 1
                         if verbose:
-                            print(f'{shallowest_level=}/{m}')
+                            print(f'{min_unexpl_lvl=}/{len(Qs) - 1}')
 
             # If no child point is a better candidate to zoom in on...
-            if (best_child_dH >= best_dH or level == m) and shallowest_level < m:
+            else:
+                # Update the counter of no-improvement iterations.
+                n_no_improv += 1
+
                 # ...Find the level of best known grid point.
-                candidate_dH = min(Qs[l][0] for l in range(shallowest_level, m) if Qs[l])
-                level = max(l for l in range(shallowest_level, m) if Qs[l] and Qs[l][0] == candidate_dH)
+                candidate_dH = np.inf
+                for lvl_offset, Q in enumerate(Qs[min_unexpl_lvl:]):
+                    dH, *_ = Q[0]
+                    if dH < candidate_dH:
+                        candidate_dH = dH
+                        lvl = min_unexpl_lvl + lvl_offset
 
             best_dH = min(best_dH, best_child_dH)
+            min_unexpl_lvl_err_ub = calc_dH_diff_ub(
+                eps_delta / 2**min_unexpl_lvl, eps_rho / 2**min_unexpl_lvl)
+            err_ub = min(min_unexpl_lvl_err_ub, best_dH)
 
     return best_dH
