@@ -47,7 +47,7 @@ def make_grid(center, cell_size, cube_size, ball_rad):
     return vertex_coords, cell_size
 
 
-def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=1, improv_margin=.01,
+def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, improv_margin=.01,
                      proper_rigid=False, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance.
@@ -103,7 +103,7 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=1, impro
         err_ub = np.inf
         # Multiscale search until achieved the target accuracy (or searched the maximum number of
         # grid points without improvement in a row, if the target accuracy is not set).
-        while (target_err and err_ub > target_err) or (not target_err and n_no_improv < max_no_improv):
+        while (target_err and err_ub > target_err) or (not target_err and n_no_improv <= max_no_improv):
             if verbose > 1:
                 print(f'{best_dH=:.5f}, {err_ub=:.5f}, {n_no_improv=}, Qs={list(map(len, Qs))}')
 
@@ -139,7 +139,8 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=1, impro
             else:
                 n_no_improv += 1  # update the counter of no-improvement iterations
 
-                # Choose next level to explore.
+                # Choose the current best grid point to explore next.
+                # lvl = min_unexpl_lvl
                 dH = np.inf
                 for candidate_lvl in range(min_unexpl_lvl, len(Qs)):
                     try:
@@ -153,6 +154,7 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=1, impro
             # Update the smallest unexplored level and the associated error bound.
             while not Qs[min_unexpl_lvl]:
                 min_unexpl_lvl += 1
+                lvl = max(lvl, min_unexpl_lvl)
                 min_unexpl_lvl_err_ub = calc_dH_diff_ub(
                     eps_delta / 2**min_unexpl_lvl, eps_rho / 2**min_unexpl_lvl)
                 err_ub = min(min_unexpl_lvl_err_ub, err_ub)
