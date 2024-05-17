@@ -48,7 +48,7 @@ def make_grid(center, cell_size, cube_size, ball_rad):
 
 
 def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, improv_margin=.01,
-                     proper_rigid=False, verbose=0):
+                     proper_rigid=False, use_avg=False, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance.
 
@@ -88,11 +88,12 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
 
     best_dH = np.inf
     sigmas = [False] if proper_rigid else [False, True]
+    err_ubs = dict()
     for sigma in sigmas:
         def calc_dH(grid_point):
             T = Transformation(grid_point[:k], grid_point[k:], sigma)
-            return max(A.transform(T).asymm_dH(B),
-                       B.transform(T.invert()).asymm_dH(A))
+            return max(A.transform(T).asymm_dH(B, use_avg=use_avg),
+                       B.transform(T.invert()).asymm_dH(A, use_avg=use_avg))
 
         # Create a list of sorted (by dH) queues of grid points to zoom in on or prune for each level.
         grid_center = np.zeros(k + k * (k-1) // 2)
@@ -100,12 +101,14 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
         Qs[0].add((calc_dH(grid_center), tuple(grid_center)))
         lvl = min_unexpl_lvl = 0
         n_no_improv = 0
-        err_ub = np.inf
+        err_ubs[sigma] = np.inf
         # Multiscale search until achieved the target accuracy (or searched the maximum number of
         # grid points without improvement in a row, if the target accuracy is not set).
-        while (target_err and err_ub > target_err) or (not target_err and n_no_improv <= max_no_improv):
+        while ((target_err and err_ubs[sigma] > target_err) or
+               (not target_err and n_no_improv <= max_no_improv)):
             if verbose > 1:
-                print(f'{best_dH=:.5f}, {err_ub=:.5f}, {n_no_improv=}, Qs={list(map(len, Qs))}')
+                print(f'{best_dH=:.5f}, err_ub={err_ubs[sigma]:.5f}, {n_no_improv=}, '
+                      f'Qs={list(map(len, Qs))}')
 
             _, grid_point = Qs[lvl].pop(0)
 
@@ -124,7 +127,6 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
             if best_child_dH < best_dH * (1 - improv_margin):
                 lvl += 1
                 best_dH = best_child_dH
-                err_ub = min(best_dH, err_ub)
                 n_no_improv = 0  # reset the counter of no-improvement iterations
 
                 # Prune grid points zooming in on which cannot improve best dH.
@@ -157,8 +159,8 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
                 lvl = max(lvl, min_unexpl_lvl)
                 min_unexpl_lvl_err_ub = calc_dH_diff_ub(
                     eps_delta / 2**min_unexpl_lvl, eps_rho / 2**min_unexpl_lvl)
-                err_ub = min(min_unexpl_lvl_err_ub, err_ub)
+                err_ubs[sigma] = min(min_unexpl_lvl_err_ub, err_ubs[sigma])
                 if verbose:
                     print(f'updated depth range to {min_unexpl_lvl}-{len(Qs) - 1}')
 
-    return best_dH, err_ub
+    return best_dH, min(best_dH, max(err_ubs.values()))
