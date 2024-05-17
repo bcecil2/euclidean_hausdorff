@@ -4,13 +4,21 @@ from scipy import spatial as sp
 
 class PointCloud(object):
 
-    def __init__(self, coords, build_kd_tree=True):
+    def __init__(self, coords, build_kd_tree=True, distance_agg='max'):
         '''
         :param coords: point coordinates, (n, k)-array
         :param kd_tree: k-d tree to speed up Hausdorff distance (or None to be computed)
         '''
         self.orig_centroid = coords.mean(axis=0)
         self.coords = coords - self.orig_centroid
+        if distance_agg == 'max':
+            self.agg = np.max
+        elif distance_agg == 'mean':
+            self.agg = np.mean
+        elif distance_agg == 'median':
+            self.agg = np.median
+        else:
+            raise f'unknown aggregate function {distance_agg}'
 
         if build_kd_tree:
             # Build k-d tree on the non-transformed points.
@@ -34,4 +42,4 @@ class PointCloud(object):
         # Compute distances to the nearest neighbors in other.
         distances_to_other, _ = other.kd_tree.query(self.coords, workers=-1)
 
-        return np.max(distances_to_other)
+        return self.agg(distances_to_other)

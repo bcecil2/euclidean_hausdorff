@@ -48,7 +48,7 @@ def make_grid(center, cell_size, cube_size, ball_rad):
 
 
 def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, improv_margin=.01,
-                     proper_rigid=False, use_avg=False, verbose=0):
+                     proper_rigid=False, distance_agg='max', verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance.
 
@@ -61,7 +61,7 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
     :param verbose: detalization level in the output, int
     :return: approximate distance
     """
-    A, B = PointCloud(A_coords), PointCloud(B_coords)
+    A, B = PointCloud(A_coords, distance_agg=distance_agg), PointCloud(B_coords, distance_agg=distance_agg)
     normalized_coords = np.concatenate([A.coords, B.coords])
 
     _, k = normalized_coords.shape
@@ -92,8 +92,7 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
     for sigma in sigmas:
         def calc_dH(grid_point):
             T = Transformation(grid_point[:k], grid_point[k:], sigma)
-            return max(A.transform(T).asymm_dH(B, use_avg=use_avg),
-                       B.transform(T.invert()).asymm_dH(A, use_avg=use_avg))
+            return max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
 
         # Create a list of sorted (by dH) queues of grid points to zoom in on or prune for each level.
         grid_center = np.zeros(k + k * (k-1) // 2)
