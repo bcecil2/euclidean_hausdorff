@@ -86,80 +86,84 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
         rho_part = np.repeat(rhos, len(deltas), axis=0)
         return np.hstack((delta_part, rho_part))
 
-    best_dH = np.inf
     sigmas = [False] if proper_rigid else [False, True]
-    err_ubs = dict()
-    for sigma in sigmas:
-        def calc_dH(grid_point):
+    best_dH = err_ub = np.inf
+
+    def calc_dH(grid_point):
+        dH = np.inf
+        for sigma in sigmas:
             T = Transformation(grid_point[:k], grid_point[k:], sigma)
-            return max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
+            sigma_dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
+            dH = min(dH, sigma_dH)
 
-        # Create a list of sorted (by dH) queues of grid points to zoom in on or prune for each level.
-        grid_center = np.zeros(k + k * (k-1) // 2)
-        Qs = [SortedList()]
-        Qs[0].add((calc_dH(grid_center), tuple(grid_center)))
-        lvl = min_unexpl_lvl = 0
-        n_no_improv = 0
-        err_ubs[sigma] = np.inf
-        # Multiscale search until achieved the target accuracy (or searched the maximum number of
-        # grid points without improvement in a row, if the target accuracy is not set).
-        while ((target_err and err_ubs[sigma] > target_err) or
-               (not target_err and n_no_improv <= max_no_improv)):
-            if verbose > 1:
-                print(f'{best_dH=:.5f}, err_ub={err_ubs[sigma]:.5f}, {n_no_improv=}, '
-                      f'Qs={list(map(len, Qs))}')
+        return dH
 
-            _, grid_point = Qs[lvl].pop(0)
+    # Create a list of sorted (by dH) queues of grid points to zoom in on or prune for each level.
+    grid_center = np.zeros(k + k * (k-1) // 2)
+    Qs = [SortedList()]
+    Qs[0].add((calc_dH(grid_center), tuple(grid_center)))
+    lvl = min_unexpl_lvl = 0
+    n_no_improv = 0
+    # Multiscale search until achieved the target accuracy (or searched the maximum number of
+    # grid points without improvement in a row, if the target accuracy is not set).
+    while ((target_err and err_ub > target_err) or
+           (not target_err and n_no_improv <= max_no_improv)):
+        if verbose > 1:
+            print(f'{best_dH=:.5f}, err_ub={err_ub:.5f}, {n_no_improv=}, '
+                  f'Qs={list(map(len, Qs))}')
 
-            # Zoom in on the currently best grid point.
-            children = zoom_in(np.array(grid_point), lvl)
-            child_dHs = list(map(calc_dH, children))
-            best_child_dH = min(child_dHs)
-            try:
-                Q = Qs[lvl + 1]
-            except IndexError:
-                Q = SortedList()
-                Qs.append(Q)
-            Q.update(zip(child_dHs, map(tuple, children)))
+        _, grid_point = Qs[lvl].pop(0)
 
-            # If some child point delivers a non-marginal improvement...
-            if best_child_dH < best_dH * (1 - improv_margin):
-                lvl += 1
-                best_dH = best_child_dH
-                n_no_improv = 0  # reset the counter of no-improvement iterations
+        # Zoom in on the currently best grid point.
+        children = zoom_in(np.array(grid_point), lvl)
+        child_dHs = list(map(calc_dH, children))
+        best_child_dH = min(child_dHs)
+        try:
+            Q = Qs[lvl + 1]
+        except IndexError:
+            Q = SortedList()
+            Qs.append(Q)
+        Q.update(zip(child_dHs, map(tuple, children)))
 
-                # Prune grid points zooming in on which cannot improve best dH.
-                for prune_lvl in range(min_unexpl_lvl, len(Qs)):
-                    prune_lvl_err_ub = calc_dH_diff_ub(eps_delta / 2**prune_lvl, eps_rho / 2**prune_lvl)
-                    prune_thresh = best_dH + prune_lvl_err_ub
-                    n_points_to_retain = Qs[prune_lvl].bisect_left((prune_thresh, ))
-                    for _ in range(len(Qs[prune_lvl]) - n_points_to_retain):
-                        Qs[prune_lvl].pop()
+        # If some child point delivers a non-marginal improvement...
+        if best_child_dH < best_dH * (1 - improv_margin):
+            lvl += 1
+            best_dH = best_child_dH
+            err_ub = min(best_dH, err_ub)
+            n_no_improv = 0  # reset the counter of no-improvement iterations
 
-            # If no child point is a better candidate to zoom in on...
-            else:
-                n_no_improv += 1  # update the counter of no-improvement iterations
+            # Prune grid points zooming in on which cannot improve best dH.
+            for prune_lvl in range(min_unexpl_lvl, len(Qs)):
+                prune_lvl_err_ub = calc_dH_diff_ub(eps_delta / 2**prune_lvl, eps_rho / 2**prune_lvl)
+                prune_thresh = best_dH + prune_lvl_err_ub
+                n_points_to_retain = Qs[prune_lvl].bisect_left((prune_thresh, ))
+                for _ in range(len(Qs[prune_lvl]) - n_points_to_retain):
+                    Qs[prune_lvl].pop()
 
-                # Choose the current best grid point to explore next.
-                # lvl = min_unexpl_lvl
-                dH = np.inf
-                for candidate_lvl in range(min_unexpl_lvl, len(Qs)):
-                    try:
-                        candidate_dH, _ = Qs[candidate_lvl][0]
-                    except IndexError:
-                        pass
-                    else:
-                        if candidate_dH < dH:
-                            dH, lvl = candidate_dH, candidate_lvl
+        # If no child point is a better candidate to zoom in on...
+        else:
+            n_no_improv += 1  # update the counter of no-improvement iterations
 
-            # Update the smallest unexplored level and the associated error bound.
-            while not Qs[min_unexpl_lvl]:
-                min_unexpl_lvl += 1
-                lvl = max(lvl, min_unexpl_lvl)
-                min_unexpl_lvl_err_ub = calc_dH_diff_ub(
-                    eps_delta / 2**min_unexpl_lvl, eps_rho / 2**min_unexpl_lvl)
-                err_ubs[sigma] = min(min_unexpl_lvl_err_ub, err_ubs[sigma])
-                if verbose:
-                    print(f'updated depth range to {min_unexpl_lvl}-{len(Qs) - 1}')
+            # Choose the current best grid point to explore next.
+            # lvl = min_unexpl_lvl
+            dH = np.inf
+            for candidate_lvl in range(min_unexpl_lvl, len(Qs)):
+                try:
+                    candidate_dH, _ = Qs[candidate_lvl][0]
+                except IndexError:
+                    pass
+                else:
+                    if candidate_dH < dH:
+                        dH, lvl = candidate_dH, candidate_lvl
 
-    return best_dH, min(best_dH, max(err_ubs.values()))
+        # Update the smallest unexplored level and the associated error bound.
+        while not Qs[min_unexpl_lvl]:
+            min_unexpl_lvl += 1
+            lvl = max(lvl, min_unexpl_lvl)
+            min_unexpl_lvl_err_ub = calc_dH_diff_ub(
+                eps_delta / 2**min_unexpl_lvl, eps_rho / 2**min_unexpl_lvl)
+            err_ub = min(min_unexpl_lvl_err_ub, err_ub)
+            if verbose:
+                print(f'updated depth range to {min_unexpl_lvl}-{len(Qs) - 1}')
+
+    return best_dH, err_ub
