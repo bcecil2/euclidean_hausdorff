@@ -11,14 +11,15 @@ class PointCloud(object):
         '''
         self.orig_centroid = coords.mean(axis=0)
         self.coords = coords - self.orig_centroid
-        if distance_agg == 'max':
+        self.agg_descr = distance_agg
+        if self.agg_descr == 'max':
             self.agg = np.max
-        elif distance_agg == 'mean':
+        elif self.agg_descr == 'mean':
             self.agg = np.mean
-        elif distance_agg == 'median':
+        elif self.agg_descr == 'median':
             self.agg = np.median
         else:
-            raise f'unknown aggregate function {distance_agg}'
+            raise f'unknown aggregate function {self.agg_descr}'
 
         if build_kd_tree:
             # Build k-d tree on the non-transformed points.
@@ -26,7 +27,8 @@ class PointCloud(object):
 
     def transform(self, T):
         transformed_coords = T.apply(self.coords)
-        transformed_self = PointCloud(transformed_coords, build_kd_tree=False)
+        transformed_self = PointCloud(
+            transformed_coords, build_kd_tree=False, distance_agg=self.agg_descr)
         transformed_self.orig_centroid = self.orig_centroid
         transformed_self.kd_tree = self.kd_tree
 
