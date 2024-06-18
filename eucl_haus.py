@@ -48,7 +48,7 @@ def make_grid(center, cell_size, cube_size, ball_rad):
 
 
 def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, improv_margin=.01,
-                     proper_rigid=False, distance_agg='max', verbose=0):
+                     proper_rigid=False, n_parts=2, distance_agg='max', verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance.
 
@@ -58,6 +58,7 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
     :param max_no_improv: maximum number of iterations without improvement, int
     :param improv_margin: relative
     :param proper_rigid: whether to consider only proper rigid transformations, bool
+    :param n_parts: number of parts to split a grid cell into (2 means dyadic grid), int
     :param verbose: detalization level in the output, int
     :return: approximate distance
     """
@@ -79,9 +80,9 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
 
     def zoom_in(point, level):
         delta_center, rho_center = point[:k], point[k:]
-        delta_cell_size, rho_cell_size = np.array([a_delta, a_rho]) / 2**level
-        deltas, _ = make_grid(delta_center, delta_cell_size/2, delta_cell_size, 2*r)
-        rhos, _ = make_grid(rho_center, rho_cell_size/2, rho_cell_size, np.pi)
+        delta_cell_size, rho_cell_size = np.array([a_delta, a_rho]) / n_parts**level
+        deltas, _ = make_grid(delta_center, delta_cell_size/n_parts, delta_cell_size, 2*r)
+        rhos, _ = make_grid(rho_center, rho_cell_size/n_parts, rho_cell_size, np.pi)
         delta_part = np.tile(deltas, (len(rhos), 1))
         rho_part = np.repeat(rhos, len(deltas), axis=0)
         return np.hstack((delta_part, rho_part))
@@ -110,7 +111,8 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
            (not target_err and n_no_improv <= max_no_improv)):
         if verbose > 1:
             print(f'{best_dH=:.5f}, err_ub={err_ub:.5f}, {n_no_improv=}, '
-                  f'Qs={list(map(len, Qs))}')
+                  f'Qs={list(map(len, Qs))}, max_dHs={[Q[0][0] for Q in Qs if Q]},'
+                  f'Ls={[calc_dH_diff_ub(eps_delta / n_parts**i, eps_rho / n_parts**i) for i in range(min_unexpl_lvl, len(Qs))]}')
 
         _, grid_point = Qs[lvl].pop(0)
 
@@ -134,7 +136,8 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
 
             # Prune grid points zooming in on which cannot improve best dH.
             for prune_lvl in range(min_unexpl_lvl, len(Qs)):
-                prune_lvl_err_ub = calc_dH_diff_ub(eps_delta / 2**prune_lvl, eps_rho / 2**prune_lvl)
+                prune_lvl_err_ub = calc_dH_diff_ub(
+                    eps_delta / n_parts**prune_lvl, eps_rho / n_parts**prune_lvl)
                 prune_thresh = best_dH + prune_lvl_err_ub
                 n_points_to_retain = Qs[prune_lvl].bisect_left((prune_thresh, ))
                 for _ in range(len(Qs[prune_lvl]) - n_points_to_retain):
@@ -161,7 +164,7 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
             min_unexpl_lvl += 1
             lvl = max(lvl, min_unexpl_lvl)
             min_unexpl_lvl_err_ub = calc_dH_diff_ub(
-                eps_delta / 2**min_unexpl_lvl, eps_rho / 2**min_unexpl_lvl)
+                eps_delta / n_parts**min_unexpl_lvl, eps_rho / n_parts**min_unexpl_lvl)
             err_ub = min(min_unexpl_lvl_err_ub, err_ub)
             if verbose:
                 print(f'updated depth range to {min_unexpl_lvl}-{len(Qs) - 1}')
