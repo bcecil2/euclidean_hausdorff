@@ -1,14 +1,15 @@
 import keras
 from keras.datasets import mnist
 import numpy as np
-import tensorflow as tf
 import matplotlib.pyplot as plt
-from EuclideanSimModel import EuclideanSim
 from tqdm import tqdm
+from scipy.spatial.distance import cdist
+from eucl_haus import approx_eucl_haus
 
 #return 3 tuples of (x,y) for train, val, test
 def getMnist(train=0.1,val=0.1,test=1,):
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    plotImage(x_train[0])
     x_train = [im2points(x) for x in x_train]
     x_test = [im2points(x) for x in x_test]
 
@@ -25,6 +26,13 @@ def getMnist(train=0.1,val=0.1,test=1,):
     testSplit = (x_test[:testIdx], y_test[:testIdx])
 
     return trainSplit,valSplit,testSplit
+
+def getMnistFull():
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    xs = [im2points(x) for x in x_train]
+    xs += [im2points(x) for x in x_test]
+    return xs,np.append(y_train,y_test)
+
 
 def testSplits():
     train, val, test = getMnist(1,1,1)
@@ -45,33 +53,32 @@ def testSplits():
     #make sure last image in train isnt in val
     assert np.all(train[1][-1] != val[1][0])
 
-def topK(xs,ys,k):
-    from collections import defaultdict
-    d = defaultdict(list)
-    for x,y in zip(xs,ys):
-        if len(d[y]) < k:
-            d[y].append(x)
-    return d
-
 def plotImage(X):
     xs,ys = np.nonzero(X)
     plt.scatter(xs,ys)
 
 def im2points(X):
     xs,ys = np.nonzero(X)
-    return np.stack([xs,ys],axis=-1)
-
-def trainAndValidate(trainSet,valSet,size,k):
-    params = {"grid_size": size}
-    buckets = topK(*trainSet, k)
-    valSet = list(zip(valSet[0],valSet[1]))
-    model = EuclideanSim(buckets, params)
-    count = 0
-    for x,y in tqdm(valSet):
-       pred = model.similarity(x)
-       count += pred == y
-    return count/len(valSet)
+    points = np.stack([xs,ys],axis=-1).astype(np.float64)
+    points /= np.max(cdist(points,points))
+    return points
 
 if __name__ == "__main__":
-    train,val,test = getMnist(val=0.01)
-    print(trainAndValidate(train,val,size=2,k=1))
+    #train,val,test = getMnist(val=0.01)
+    xs,ys = getMnistFull()
+    from time import perf_counter
+    tick = perf_counter()
+    approx_eucl_haus(xs[0], xs[1])
+    tock = perf_counter()
+    print(tock-tick)
+    acc = 0.0
+    i = 0
+    for x in tqdm(xs):
+        dists = []
+        for ox in xs:
+            dists.append(approx_eucl_haus(x,ox)[0])
+        dists[i] = np.inf
+        idx = np.argmin(dists)
+        acc += ys[idx] == ys[i]
+        i += 1
+    print(acc/len(xs))
