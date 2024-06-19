@@ -71,8 +71,8 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
     if verbose:
         print(f'{r=:.5f}, max diam={max(map(lambda x: diam(x.coords), [A, B])):.5f}')
 
-    # Calculate initial cell sizes/covering radii for ∆ and P .
-    a_delta, a_rho = 2*r, 2
+    # Calculate initial cell sizes/covering radii for ∆ and P.
+    a_delta, a_rho = 2*r, 1 if k == 2 else 2
     eps_delta, eps_rho = np.array([a_delta, a_rho]) * np.sqrt(k) / 2
 
     def calc_dH_diff_ub(delta_diff, rho_diff):
@@ -148,16 +148,16 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
             n_no_improv += 1  # update the counter of no-improvement iterations
 
             # Choose the current best grid point to explore next.
-            # lvl = min_unexpl_lvl
-            dH = np.inf
-            for candidate_lvl in range(min_unexpl_lvl, len(Qs)):
-                try:
-                    candidate_dH, _ = Qs[candidate_lvl][0]
-                except IndexError:
-                    pass
-                else:
-                    if candidate_dH < dH:
-                        dH, lvl = candidate_dH, candidate_lvl
+            lvl = min_unexpl_lvl
+            # dH = np.inf
+            # for candidate_lvl in range(min_unexpl_lvl, len(Qs)):
+            #     try:
+            #         candidate_dH, _ = Qs[candidate_lvl][0]
+            #     except IndexError:
+            #         pass
+            #     else:
+            #         if candidate_dH < dH:
+            #             dH, lvl = candidate_dH, candidate_lvl
 
         # Update the smallest unexplored level and the associated error bound.
         while not Qs[min_unexpl_lvl]:
