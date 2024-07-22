@@ -1,6 +1,5 @@
 import numpy as np
-from scipy import optimize
-from itertools import product
+from scipy import spatial as sp
 from sortedcontainers import SortedList
 
 from point_cloud import PointCloud
@@ -46,6 +45,11 @@ def make_grid(center, cell_size, cube_size, ball_rad):
 
     return vertex_coords, cell_size
 
+def diam(coords):
+  hull = sp.ConvexHull(coords)
+  hull_coords = coords[hull.vertices]
+  candidate_distances = sp.distance.cdist(hull_coords, hull_coords)
+  return candidate_distances.max()
 
 def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, improv_margin=.01,
                      proper_rigid=False, n_parts=2, distance_agg='max', verbose=0):
