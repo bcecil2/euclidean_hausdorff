@@ -4,7 +4,6 @@ from sortedcontainers import SortedList
 
 from point_cloud import PointCloud
 from transformation import Transformation
-from optimizers import diam
 
 
 def make_grid(center, cell_size, cube_size, ball_rad):
@@ -64,7 +63,7 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
     :param proper_rigid: whether to consider only proper rigid transformations, bool
     :param n_parts: number of parts to split a grid cell into (2 means dyadic grid), int
     :param verbose: detalization level in the output, int
-    :return: approximate distance
+    :return: approximate distance, error upper bound
     """
     A, B = PointCloud(A_coords, distance_agg=distance_agg), PointCloud(B_coords, distance_agg=distance_agg)
     normalized_coords = np.concatenate([A.coords, B.coords])
