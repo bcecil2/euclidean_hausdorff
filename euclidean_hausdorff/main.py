@@ -1,10 +1,6 @@
-import numpy as np
-import matplotlib.pyplot as plt
-
-from eucl_haus import approx_eucl_haus
-from transformation import Transformation
-from point_cloud import PointCloud
-from utils import *
+from euclidean_hausdorff.eucl_haus import approx_eucl_haus
+from euclidean_hausdorff.transformation import Transformation
+from euclidean_hausdorff.utils import *
 
 
 # Press the green button in the gutter to run the script.
@@ -17,7 +13,7 @@ if __name__ == '__main__':
     transformed_box = t.apply(box)
     plot(box, transformed_box)
 
-    dist, e_ub = approx_eucl_haus(box,transformed_box,target_err=0.0,max_no_improv=1000,verbose=1)
+    dist, e_ub = approx_eucl_haus(box,transformed_box,target_err=0.0,max_no_improv=10,verbose=2)
     print(dist)
     # hauss_d, diam = haus_dist(box, shifted, diam=True)
     # d, O, p, t = grid_search(box, shifted, diam,10)

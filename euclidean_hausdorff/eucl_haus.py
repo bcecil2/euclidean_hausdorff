@@ -2,8 +2,8 @@ import numpy as np
 from scipy import spatial as sp
 from sortedcontainers import SortedList
 
-from point_cloud import PointCloud
-from transformation import Transformation
+from .point_cloud import PointCloud
+from .transformation import Transformation
 
 
 def make_grid(center, cell_size, cube_size, ball_rad):
