@@ -76,13 +76,14 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
 
     # Calculate initial cell sizes/covering radii for ∆ and P.
     a_delta, a_rho = 2*r, 1 if k == 2 else 2
-    eps_delta, eps_rho = np.array([a_delta, a_rho]) * np.sqrt(k) / 2
+    delta_dim, rho_dim = k, k * (k - 1) // 2
+    eps_delta, eps_rho = a_delta * np.sqrt(delta_dim) / 2, a_rho * np.sqrt(rho_dim) / 2
 
     def calc_dH_diff_ub(delta_diff, rho_diff):
         return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
 
     def zoom_in(point, level):
-        delta_center, rho_center = point[:k], point[k:]
+        delta_center, rho_center = point[:delta_dim], point[delta_dim:]
         delta_cell_size, rho_cell_size = np.array([a_delta, a_rho]) / n_parts**level
         deltas, _ = make_grid(delta_center, delta_cell_size/n_parts, delta_cell_size, 2*r)
         rhos, _ = make_grid(rho_center, rho_cell_size/n_parts, rho_cell_size, np.pi)
@@ -96,14 +97,14 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
     def calc_dH(grid_point):
         dH = np.inf
         for sigma in sigmas:
-            T = Transformation(grid_point[:k], grid_point[k:], sigma)
+            T = Transformation(grid_point[:delta_dim], grid_point[delta_dim:], sigma)
             sigma_dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
             dH = min(dH, sigma_dH)
 
         return dH
 
     # Create a list of sorted (by dH) queues of grid points to zoom in on or prune for each level.
-    grid_center = np.zeros(k + k * (k-1) // 2)
+    grid_center = np.zeros(delta_dim + rho_dim)
     Qs = [SortedList()]
     Qs[0].add((calc_dH(grid_center), tuple(grid_center)))
     lvl = min_unexpl_lvl = 0
