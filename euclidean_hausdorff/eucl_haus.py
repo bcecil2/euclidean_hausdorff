@@ -6,16 +6,19 @@ from .point_cloud import PointCloud
 from .transformation import Transformation
 
 
-def make_grid(center, cell_size, cube_size, ball_rad):
+def make_grid(center, cell_size, ball_rad, cube_size=None):
     """
     Compile a grid with cell size a on the intersection of cube [-l/2, l/2]^k + {c} and ball B(0, r).
 
     :param center: cube center c, k-array
     :param cell_size: cell side length a, float
-    :param cube_size: cube side length l, float
     :param ball_rad: ball radius r, float
+    :param cube_size: cube side length l, float
     :return: (?, k)-array of grid vertices, cell_size
     """
+    # Assume the smallest cube containing the ball if not given.
+    cube_size = cube_size or 2*ball_rad
+
     # Reduce cell size without increasing the cell count.
     n_cells = int(np.ceil(cube_size / cell_size))
     cell_size = cube_size / n_cells
@@ -84,9 +87,9 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
 
     def zoom_in(point, level):
         delta_center, rho_center = point[:delta_dim], point[delta_dim:]
-        delta_cell_size, rho_cell_size = np.array([a_delta, a_rho]) / n_parts**level
-        deltas, _ = make_grid(delta_center, delta_cell_size/n_parts, delta_cell_size, 2*r)
-        rhos, _ = make_grid(rho_center, rho_cell_size/n_parts, rho_cell_size, np.pi)
+        level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / n_parts**level
+        deltas, _ = make_grid(delta_center, level_a_delta/n_parts, 2*r, cube_size=level_a_delta)
+        rhos, _ = make_grid(rho_center, level_a_rho/n_parts, np.pi, cube_size=level_a_rho)
         delta_part = np.tile(deltas, (len(rhos), 1))
         rho_part = np.repeat(rhos, len(deltas), axis=0)
         return np.hstack((delta_part, rho_part))
