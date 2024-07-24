@@ -1,5 +1,6 @@
 import numpy as np
-from scipy import spatial as sp
+from scipy import spatial as sp, optimize
+from itertools import product
 from sortedcontainers import SortedList
 
 from .point_cloud import PointCloud
@@ -47,46 +48,108 @@ def make_grid(center, cell_size, ball_rad, cube_size=None):
 
     return vertex_coords, cell_size
 
-def diam(coords):
-  hull = sp.ConvexHull(coords)
-  hull_coords = coords[hull.vertices]
-  candidate_distances = sp.distance.cdist(hull_coords, hull_coords)
-  return candidate_distances.max()
 
-def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, improv_margin=.01,
-                     proper_rigid=False, n_parts=2, distance_agg='max', verbose=0):
+def diam(coords):
+    hull = sp.ConvexHull(coords)
+    hull_coords = coords[hull.vertices]
+    candidate_distances = sp.distance.cdist(hull_coords, hull_coords)
+
+    return candidate_distances.max()
+
+
+def upper_init(A_coords, B_coords, proper_rigid=False, verbose=0):
     """
-    Approximate the Euclidean–Hausdorff distance.
+    Initialize objects and make checks for the Euclidean–Hausdorff distance computation.
+    :param A_coords: points of A, (?×k)-array
+    :param B_coords: points of B, (?×k)-array
+    :param proper_rigid: whether to consider only proper rigid transformations, bool
+    :param verbose: detalization level in the output, int
+    :return: 2 input PointClouds, radius of ball normalized space are contained in,
+        translational dimension, rotational dimension, reflection "grid"
+    """
+    # Initialize point clouds.
+    A, B = map(PointCloud, [A_coords, B_coords])
+    normalized_coords = np.concatenate([A.coords, B.coords])
+    _, k = normalized_coords.shape
+    assert k in {2, 3}, 'only 2D and 3D spaces are supported'
+
+    # Initialize search grid metadata.
+    r = np.linalg.norm(normalized_coords, axis=1).max()
+    if verbose:
+        print(f'{r=:.5f}, max diam={max(map(lambda x: diam(x.coords), [A, B])):.5f}')
+    dim_delta, dim_rho = k, k * (k - 1) // 2
+    sigmas = [False] if proper_rigid else [False, True]
+
+    return A, B, r, dim_delta, dim_rho, sigmas
+
+
+def upper_exhaustive(A_coords, B_coords, target_err=None, proper_rigid=False, verbose=0):
+    """
+    Approximate the Euclidean–Hausdorff distance to the desired error bound
+    using exhaustive grid search.
 
     :param A_coords: points of A, (?×k)-array
     :param B_coords: points of B, (?×k)-array
     :param target_err: (upper bound of) additive approximation error, float
-    :param max_no_improv: maximum number of iterations without improvement, int
-    :param improv_margin: relative
+    :param proper_rigid: whether to consider only proper rigid transformations, bool
+    :param verbose: detalization level in the output, int
+    :return: approximate distance, error upper bound
+    """
+    A, B, r, dim_delta, dim_rho, sigmas = upper_init(
+        A_coords, B_coords, proper_rigid=proper_rigid, verbose=verbose)
+
+    # Find optimal covering radii of the two search grids.
+    def obj_grad(eps_delta):
+        return (np.arccos(1 - (target_err - eps_delta)**2 / (2 * r**2)) - 2 * eps_delta /
+                np.sqrt(4 * r**2 - (target_err - eps_delta)**2))
+
+    eps_delta, = optimize.fsolve(obj_grad, target_err/2)
+    eps_rho = np.arccos(1 - (target_err - eps_delta)**2 / (2 * r**2))
+    assert np.isclose(target_err, eps_delta + np.sqrt(2*(1 - np.cos(eps_rho)))*r), \
+        f"covering radius of translation grid {eps_delta=} was found incorrectly"
+
+    # Make grid delivering desired error bound.
+    delta_center, rho_center = map(np.zeros, [dim_delta, dim_rho])
+    deltas, a_delta = make_grid(delta_center, 2*eps_delta / np.sqrt(dim_delta), 2*r)
+    rhos, a_rho = make_grid(rho_center, 2*eps_rho / np.sqrt(dim_rho), np.pi)
+    err_ub = a_delta * np.sqrt(dim_delta) / 2 + a_rho * np.sqrt(dim_rho) / 2
+
+    # Exhaustively search the grid.
+    best_dH = np.inf
+    for delta, rho, sigma in product(deltas, rhos, sigmas):
+        T = Transformation(delta, rho, sigma)
+        dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
+        best_dH = min(dH, best_dH)
+
+    return best_dH, err_ub
+
+
+def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
+                    proper_rigid=False, n_parts=2, verbose=0):
+    """
+    Approximate the Euclidean–Hausdorff distance using greedy multiscale grid search.
+
+    :param A_coords: points of A, (?×k)-array
+    :param B_coords: points of B, (?×k)-array
+    :param max_n_restarts: limit of restarts (occur when next level yields no improvement), int
+    :param improv_margin: relative decrease in dH to count as improvement, float
     :param proper_rigid: whether to consider only proper rigid transformations, bool
     :param n_parts: number of parts to split a grid cell into (2 means dyadic grid), int
     :param verbose: detalization level in the output, int
     :return: approximate distance, error upper bound
     """
-    A, B = PointCloud(A_coords, distance_agg=distance_agg), PointCloud(B_coords, distance_agg=distance_agg)
-    normalized_coords = np.concatenate([A.coords, B.coords])
-
-    _, k = normalized_coords.shape
-    assert k in {2, 3}, 'only 2D and 3D spaces are supported'
-    r = np.linalg.norm(normalized_coords, axis=1).max()
-    if verbose:
-        print(f'{r=:.5f}, max diam={max(map(lambda x: diam(x.coords), [A, B])):.5f}')
+    A, B, r, dim_delta, dim_rho, sigmas = upper_init(
+        A_coords, B_coords, proper_rigid=proper_rigid, verbose=verbose)
 
     # Calculate initial cell sizes/covering radii for ∆ and P.
-    a_delta, a_rho = 2*r, 1 if k == 2 else 2
-    delta_dim, rho_dim = k, k * (k - 1) // 2
-    eps_delta, eps_rho = a_delta * np.sqrt(delta_dim) / 2, a_rho * np.sqrt(rho_dim) / 2
+    a_delta, a_rho = 2*r, 1 if dim_delta == 2 else 2
+    eps_delta, eps_rho = a_delta * np.sqrt(dim_delta) / 2, a_rho * np.sqrt(dim_rho) / 2
 
     def calc_dH_diff_ub(delta_diff, rho_diff):
         return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
 
     def zoom_in(point, level):
-        delta_center, rho_center = point[:delta_dim], point[delta_dim:]
+        delta_center, rho_center = point[:dim_delta], point[dim_delta:]
         level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / n_parts**level
         deltas, _ = make_grid(delta_center, level_a_delta/n_parts, 2*r, cube_size=level_a_delta)
         rhos, _ = make_grid(rho_center, level_a_rho/n_parts, np.pi, cube_size=level_a_rho)
@@ -94,28 +157,26 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
         rho_part = np.repeat(rhos, len(deltas), axis=0)
         return np.hstack((delta_part, rho_part))
 
-    sigmas = [False] if proper_rigid else [False, True]
-    best_dH = err_ub = np.inf
-
     def calc_dH(grid_point):
         dH = np.inf
         for sigma in sigmas:
-            T = Transformation(grid_point[:delta_dim], grid_point[delta_dim:], sigma)
+            T = Transformation(grid_point[:dim_delta], grid_point[dim_delta:], sigma)
             sigma_dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
             dH = min(dH, sigma_dH)
 
         return dH
 
     # Create a list of sorted (by dH) queues of grid points to zoom in on or prune for each level.
-    grid_center = np.zeros(delta_dim + rho_dim)
+    grid_center = np.zeros(dim_delta + dim_rho)
     Qs = [SortedList()]
     Qs[0].add((calc_dH(grid_center), tuple(grid_center)))
     lvl = min_unexpl_lvl = 0
     n_no_improv = 0
-    # Multiscale search until achieved the target accuracy (or searched the maximum number of
-    # grid points without improvement in a row, if the target accuracy is not set).
-    while ((target_err and err_ub > target_err) or
-           (not target_err and n_no_improv <= max_no_improv)):
+
+    # Multiscale search until reached the limit of restarts (which happen after
+    # not achieving improvement at the next level).
+    best_dH = err_ub = np.inf
+    while n_no_improv <= max_n_restarts:
         if verbose > 1:
             print(f'{best_dH=:.5f}, err_ub={err_ub:.5f}, {n_no_improv=}, '
                   f'Qs={list(map(len, Qs))}, max_dHs={[Q[0][0] for Q in Qs if Q]},'
@@ -153,18 +214,7 @@ def approx_eucl_haus(A_coords, B_coords, target_err=None, max_no_improv=0, impro
         # If no child point is a better candidate to zoom in on...
         else:
             n_no_improv += 1  # update the counter of no-improvement iterations
-
-            # Choose the current best grid point to explore next.
-            lvl = min_unexpl_lvl
-            # dH = np.inf
-            # for candidate_lvl in range(min_unexpl_lvl, len(Qs)):
-            #     try:
-            #         candidate_dH, _ = Qs[candidate_lvl][0]
-            #     except IndexError:
-            #         pass
-            #     else:
-            #         if candidate_dH < dH:
-            #             dH, lvl = candidate_dH, candidate_lvl
+            lvl = min_unexpl_lvl    # choose the current best grid point to explore next
 
         # Update the smallest unexplored level and the associated error bound.
         while not Qs[min_unexpl_lvl]:

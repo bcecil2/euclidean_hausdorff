@@ -4,22 +4,13 @@ from scipy import spatial as sp
 
 class PointCloud(object):
 
-    def __init__(self, coords, build_kd_tree=True, distance_agg='max'):
+    def __init__(self, coords, build_kd_tree=True):
         '''
         :param coords: point coordinates, (n, k)-array
         :param kd_tree: k-d tree to speed up Hausdorff distance (or None to be computed)
         '''
         self.orig_centroid = coords.mean(axis=0)
         self.coords = coords - self.orig_centroid
-        self.agg_descr = distance_agg
-        if self.agg_descr == 'max':
-            self.agg = np.max
-        elif self.agg_descr == 'mean':
-            self.agg = np.mean
-        elif self.agg_descr == 'median':
-            self.agg = np.median
-        else:
-            raise f'unknown aggregate function {self.agg_descr}'
 
         if build_kd_tree:
             # Build k-d tree on the non-transformed points.
@@ -28,7 +19,7 @@ class PointCloud(object):
     def transform(self, T):
         transformed_coords = T.apply(self.coords)
         transformed_self = PointCloud(
-            transformed_coords, build_kd_tree=False, distance_agg=self.agg_descr)
+            transformed_coords, build_kd_tree=False)
         transformed_self.orig_centroid = self.orig_centroid
         transformed_self.kd_tree = self.kd_tree
 
@@ -44,4 +35,4 @@ class PointCloud(object):
         # Compute distances to the nearest neighbors in other.
         distances_to_other, _ = other.kd_tree.query(self.coords, workers=-1)
 
-        return self.agg(distances_to_other)
+        return np.max(distances_to_other)
