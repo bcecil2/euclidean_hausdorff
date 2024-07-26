@@ -1,11 +1,12 @@
 import numpy as np
-
+import sys
 import unittest
 
-from euclidean_hausdorff.eucl_haus import upper_heuristic, upper_exhaustive
-from euclidean_hausdorff.transformation import Transformation
-from euclidean_hausdorff.point_cloud import  PointCloud
-from euclidean_hausdorff.utils import *
+sys.path.insert(1, '../euclidean_hausdorff')
+from eucl_haus import upper_heuristic, upper_exhaustive
+from transformation import Transformation
+from point_cloud import PointCloud
+from utils import *
 
 
 np.random.seed(0)
