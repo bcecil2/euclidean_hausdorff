@@ -2,6 +2,7 @@ import numpy as np
 from scipy import spatial as sp, optimize
 from itertools import product
 from sortedcontainers import SortedList
+from tqdm import tqdm
 
 from .point_cloud import PointCloud
 from .transformation import Transformation
@@ -83,7 +84,7 @@ def upper_init(A_coords, B_coords, proper_rigid=False, verbose=0):
     return A, B, r, dim_delta, dim_rho, sigmas
 
 
-def upper_exhaustive(A_coords, B_coords, target_err=None, proper_rigid=False, verbose=0):
+def upper_exhaustive(A_coords, B_coords, target_err=0.5, proper_rigid=False, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance to the desired error bound
     using exhaustive grid search.
@@ -114,9 +115,11 @@ def upper_exhaustive(A_coords, B_coords, target_err=None, proper_rigid=False, ve
     rhos, a_rho = make_grid(rho_center, 2*eps_rho / np.sqrt(dim_rho), np.pi)
     err_ub = a_delta * np.sqrt(dim_delta) / 2 + a_rho * np.sqrt(dim_rho) / 2
 
+
     # Exhaustively search the grid.
+    l = len(deltas)*len(rhos)*len(sigmas)
     best_dH = np.inf
-    for delta, rho, sigma in product(deltas, rhos, sigmas):
+    for delta, rho, sigma in tqdm(product(deltas, rhos, sigmas), total=l, desc="Iters"):
         T = Transformation(delta, rho, sigma)
         dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
         best_dH = min(dH, best_dH)
