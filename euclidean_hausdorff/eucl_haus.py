@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import spatial as sp, optimize
-from itertools import product
+from itertools import product, starmap
 from sortedcontainers import SortedList
 
 from .point_cloud import PointCloud
@@ -64,8 +64,8 @@ def upper_init(A_coords, B_coords, proper_rigid=False, verbose=0):
     :param B_coords: points of B, (?×k)-array
     :param proper_rigid: whether to consider only proper rigid transformations, bool
     :param verbose: detalization level in the output, int
-    :return: 2 input PointClouds, radius of ball normalized space are contained in,
-        translational dimension, rotational dimension, reflection "grid"
+    :return: function for computing the Hausdorff distance, radius containing the normalized spaces,
+        translational dimension, rotational dimension
     """
     # Initialize point clouds.
     A, B = map(PointCloud, [A_coords, B_coords])
@@ -73,14 +73,24 @@ def upper_init(A_coords, B_coords, proper_rigid=False, verbose=0):
     _, k = normalized_coords.shape
     assert k in {2, 3}, 'only 2D and 3D spaces are supported'
 
-    # Initialize search grid metadata.
+    # Initialize search grid parameters.
     r = np.linalg.norm(normalized_coords, axis=1).max()
     if verbose:
         print(f'{r=:.5f}, max diam={max(map(lambda x: diam(x.coords), [A, B])):.5f}')
     dim_delta, dim_rho = k, k * (k - 1) // 2
     sigmas = [False] if proper_rigid else [False, True]
 
-    return A, B, r, dim_delta, dim_rho, sigmas
+    # Define calculation of the smallest Hausdorff distance under a translation-rotation combo.
+    def calc_dH(delta, rho):
+        dH = np.inf
+        for sigma in sigmas:
+            T = Transformation(delta, rho, sigma)
+            sigma_dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
+            dH = min(dH, sigma_dH)
+
+        return dH
+
+    return calc_dH, r, dim_delta, dim_rho
 
 
 def upper_exhaustive(A_coords, B_coords, target_err=None, proper_rigid=False, verbose=0):
@@ -95,7 +105,7 @@ def upper_exhaustive(A_coords, B_coords, target_err=None, proper_rigid=False, ve
     :param verbose: detalization level in the output, int
     :return: approximate distance, error upper bound
     """
-    A, B, r, dim_delta, dim_rho, sigmas = upper_init(
+    calc_dH, r, dim_delta, dim_rho = upper_init(
         A_coords, B_coords, proper_rigid=proper_rigid, verbose=verbose)
 
     # Find optimal covering radii of the two search grids.
@@ -108,18 +118,14 @@ def upper_exhaustive(A_coords, B_coords, target_err=None, proper_rigid=False, ve
     assert np.isclose(target_err, eps_delta + np.sqrt(2*(1 - np.cos(eps_rho)))*r), \
         f"covering radius of translation grid {eps_delta=} was found incorrectly"
 
-    # Make grid delivering desired error bound.
+    # Make the grid delivering desired error bound.
     delta_center, rho_center = map(np.zeros, [dim_delta, dim_rho])
     deltas, a_delta = make_grid(delta_center, 2*eps_delta / np.sqrt(dim_delta), 2*r)
     rhos, a_rho = make_grid(rho_center, 2*eps_rho / np.sqrt(dim_rho), np.pi)
-    err_ub = a_delta * np.sqrt(dim_delta) / 2 + a_rho * np.sqrt(dim_rho) / 2
+    err_ub = a_delta * np.sqrt(dim_delta)/2 + a_rho * np.sqrt(dim_rho)/2
 
     # Exhaustively search the grid.
-    best_dH = np.inf
-    for delta, rho, sigma in product(deltas, rhos, sigmas):
-        T = Transformation(delta, rho, sigma)
-        dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
-        best_dH = min(dH, best_dH)
+    best_dH = min(starmap(calc_dH, product(deltas, rhos)))
 
     return best_dH, err_ub
 
@@ -138,7 +144,7 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
     :param verbose: detalization level in the output, int
     :return: approximate distance, error upper bound
     """
-    A, B, r, dim_delta, dim_rho, sigmas = upper_init(
+    calc_dH, r, dim_delta, dim_rho = upper_init(
         A_coords, B_coords, proper_rigid=proper_rigid, verbose=verbose)
 
     # Calculate initial cell sizes/covering radii for ∆ and P.
@@ -148,59 +154,48 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
     def calc_dH_diff_ub(delta_diff, rho_diff):
         return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
 
-    def zoom_in(point, level):
-        delta_center, rho_center = point[:dim_delta], point[dim_delta:]
+    def zoom_in(delta_center, rho_center, level):
         level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / n_parts**level
         deltas, _ = make_grid(delta_center, level_a_delta/n_parts, 2*r, cube_size=level_a_delta)
         rhos, _ = make_grid(rho_center, level_a_rho/n_parts, np.pi, cube_size=level_a_rho)
-        delta_part = np.tile(deltas, (len(rhos), 1))
-        rho_part = np.repeat(rhos, len(deltas), axis=0)
-        return np.hstack((delta_part, rho_part))
-
-    def calc_dH(grid_point):
-        dH = np.inf
-        for sigma in sigmas:
-            T = Transformation(grid_point[:dim_delta], grid_point[dim_delta:], sigma)
-            sigma_dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
-            dH = min(dH, sigma_dH)
-
-        return dH
+        return list(product(deltas, rhos))
 
     # Create a list of sorted (by dH) queues of grid points to zoom in on or prune for each level.
-    grid_center = np.zeros(dim_delta + dim_rho)
+    center_delta, center_rho = (0,)*dim_delta, (0,)*dim_rho
+    grid_center = (center_delta, center_rho)
     Qs = [SortedList()]
-    Qs[0].add((calc_dH(grid_center), tuple(grid_center)))
+    Qs[0].add((calc_dH(*grid_center), grid_center))
     lvl = min_unexpl_lvl = 0
-    n_no_improv = 0
+    n_restarts = 0
 
     # Multiscale search until reached the limit of restarts (which happen after
     # not achieving improvement at the next level).
     best_dH = err_ub = np.inf
-    while n_no_improv <= max_n_restarts:
+    while n_restarts <= max_n_restarts:
         if verbose > 1:
-            print(f'{best_dH=:.5f}, err_ub={err_ub:.5f}, {n_no_improv=}, '
+            print(f'{best_dH=:.5f}, err_ub={err_ub:.5f}, {n_restarts=}, '
                   f'Qs={list(map(len, Qs))}, max_dHs={[Q[0][0] for Q in Qs if Q]},'
                   f'Ls={[calc_dH_diff_ub(eps_delta / n_parts**i, eps_rho / n_parts**i) for i in range(min_unexpl_lvl, len(Qs))]}')
 
-        _, grid_point = Qs[lvl].pop(0)
+        _, (delta, rho) = Qs[lvl].pop(0)
 
         # Zoom in on the currently best grid point.
-        children = zoom_in(np.array(grid_point), lvl)
-        child_dHs = list(map(calc_dH, children))
+        children = zoom_in(delta, rho, lvl)
+        child_dHs = list(starmap(calc_dH, children))
         best_child_dH = min(child_dHs)
         try:
             Q = Qs[lvl + 1]
         except IndexError:
             Q = SortedList()
             Qs.append(Q)
-        Q.update(zip(child_dHs, map(tuple, children)))
+        Q.update(zip(child_dHs, children))
 
         # If some child point delivers a non-marginal improvement...
         if best_child_dH < best_dH * (1 - improv_margin):
             lvl += 1
             best_dH = best_child_dH
             err_ub = min(best_dH, err_ub)
-            n_no_improv = 0  # reset the counter of no-improvement iterations
+            n_restarts = 0  # reset the counter of no-improvement iterations
 
             # Prune grid points zooming in on which cannot improve best dH.
             for prune_lvl in range(min_unexpl_lvl, len(Qs)):
@@ -213,7 +208,7 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
 
         # If no child point is a better candidate to zoom in on...
         else:
-            n_no_improv += 1  # update the counter of no-improvement iterations
+            n_restarts += 1  # update the counter of no-improvement iterations
             lvl = min_unexpl_lvl    # choose the current best grid point to explore next
 
         # Update the smallest unexplored level and the associated error bound.
