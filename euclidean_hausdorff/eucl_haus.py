@@ -4,8 +4,8 @@ from itertools import product, starmap
 from sortedcontainers import SortedList
 from tqdm import tqdm
 
-from .point_cloud import PointCloud
-from .transformation import Transformation
+from point_cloud import PointCloud
+from transformation import Transformation
 
 
 def make_grid(center, cell_size, ball_rad, cube_size=None):
@@ -125,7 +125,6 @@ def upper_exhaustive(A_coords, B_coords, target_err=0.5, proper_rigid=False, ver
     rhos, a_rho = make_grid(rho_center, 2*eps_rho / np.sqrt(dim_rho), np.pi)
     err_ub = a_delta * np.sqrt(dim_delta)/2 + a_rho * np.sqrt(dim_rho)/2
 
-
     # Exhaustively search the grid.
     delta_rhos = tqdm(product(deltas, rhos), total=len(deltas) * len(rhos), desc="grid vertices")
     best_dH = min(starmap(calc_dH, delta_rhos))
@@ -161,7 +160,7 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
         level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / n_parts**level
         deltas, _ = make_grid(delta_center, level_a_delta/n_parts, 2*r, cube_size=level_a_delta)
         rhos, _ = make_grid(rho_center, level_a_rho/n_parts, np.pi, cube_size=level_a_rho)
-        return list(product(deltas, rhos))
+        return deltas, rhos
 
     # Create a list of sorted (by dH) queues of grid points to zoom in on or prune for each level.
     center_delta, center_rho = (0,)*dim_delta, (0,)*dim_rho
@@ -183,7 +182,8 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
         _, (delta, rho) = Qs[lvl].pop(0)
 
         # Zoom in on the currently best grid point.
-        children = zoom_in(delta, rho, lvl)
+        child_deltas, child_rhos = zoom_in(delta, rho, lvl)
+        children = list(product(map(tuple, child_deltas), map(tuple, child_rhos)))
         child_dHs = list(starmap(calc_dH, children))
         best_child_dH = min(child_dHs)
         try:
