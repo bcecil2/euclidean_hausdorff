@@ -30,13 +30,10 @@ class Transformation(object):
     def invert(self):
         return Transformation(-self.delta, -self.rho, self.is_refl_nontriv, inv_order=True)
 
-
-    def make_refl_mx(self,nontriv=True):
+    def make_refl_mx(self, nontriv=True):
         """
-        Compile reflection matrix for either the trivial or a fixed non-trivial reflection.
+        Compile the reflection matrix.
 
-        :param k: dimension
-        :param nontriv: whether the reflection is non-trivial
         :return: (k×k)-array
         """
         refl_mx = np.eye(self.k)
@@ -47,10 +44,8 @@ class Transformation(object):
 
     def make_rot_mx(self):
         """
-        Compile rotation matrix for a given angle.
+        Compile the rotation matrix.
 
-        :param k: dimension
-        :param rho: scalar angle (1-array) if k=2 or rotation vector (3-array) if k=3
         :return: (k×k)-array
         """
         if self.k == 2:

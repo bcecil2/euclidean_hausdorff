@@ -50,14 +50,6 @@ def make_grid(center, cell_size, ball_rad, cube_size=None):
     return vertex_coords, cell_size
 
 
-def diam(coords):
-    hull = sp.ConvexHull(coords)
-    hull_coords = coords[hull.vertices]
-    candidate_distances = sp.distance.cdist(hull_coords, hull_coords)
-
-    return candidate_distances.max()
-
-
 def upper_init(A_coords, B_coords, proper_rigid=False, verbose=0):
     """
     Initialize objects and make checks for the Euclidean–Hausdorff distance computation.
@@ -77,7 +69,7 @@ def upper_init(A_coords, B_coords, proper_rigid=False, verbose=0):
     # Initialize search grid parameters.
     r = np.linalg.norm(normalized_coords, axis=1).max()
     if verbose:
-        print(f'{r=:.5f}, max diam={max(map(lambda x: diam(x.coords), [A, B])):.5f}')
+        print(f'{r=:.5f}')
     dim_delta, dim_rho = k, k * (k - 1) // 2
     sigmas = [False] if proper_rigid else [False, True]
 
@@ -101,7 +93,7 @@ def upper_exhaustive(A_coords, B_coords, target_err=0.5, proper_rigid=False, ver
 
     :param A_coords: points of A, (?×k)-array
     :param B_coords: points of B, (?×k)-array
-    :param target_err: (upper bound of) additive approximation error, float
+    :param target_err: upper bound of additive approximation error, float
     :param proper_rigid: whether to consider only proper rigid transformations, bool
     :param verbose: detalization level in the output, int
     :return: approximate distance, error upper bound
