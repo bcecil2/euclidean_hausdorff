@@ -86,7 +86,7 @@ def upper_init(A_coords, B_coords, proper_rigid=False, verbose=0):
     return calc_dH, r, dim_delta, dim_rho
 
 
-def upper_exhaustive(A_coords, B_coords, target_err=0.5, proper_rigid=False, verbose=0):
+def upper_exhaustive(A_coords, B_coords, target_err, proper_rigid=False, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance to the desired error bound
     using exhaustive grid search.
