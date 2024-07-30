@@ -4,7 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "euclidean_hausdorff"
-version = "0.0.2"
+version = "1.0.1"
+license="MIT"
+dynamic=["dependencies"]
 authors = [
     {name="Vladyslav Oles", email="vlad.oles@proton.me"},
     {name="Blake Cecil"}

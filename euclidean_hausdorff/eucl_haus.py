@@ -1,11 +1,11 @@
 import numpy as np
-from scipy import spatial as sp, optimize
+from scipy import optimize
 from itertools import product, starmap
 from sortedcontainers import SortedList
 from tqdm import tqdm
 
-from point_cloud import PointCloud
-from transformation import Transformation
+from .point_cloud import PointCloud
+from .transformation import Transformation
 
 
 def make_grid(center, cell_size, ball_rad, cube_size=None):
