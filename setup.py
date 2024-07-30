@@ -7,7 +7,7 @@ setup(
     author_email='vlad.oles@proton.me',
     packages=['euclidean_hausdorff'],
     url='http://pypi.python.org/pypi/euclidean-hausdorff/',
-    description='Approximating the Euclidean Hausdorff Distance',
+    description='Approximating the Euclidean–Hausdorff distance',
     long_description=open('README.md').read(),
     install_requires=[
         "scipy >= 1.12.0",
