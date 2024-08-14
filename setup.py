@@ -3,12 +3,12 @@ from distutils.core import setup
 setup(
     name='euclidean_hausdorff',
     version='1.0.2',
-    author='Vladyslav Oles',
+    author='Vladyslav Oles, Blake Cecil',
     author_email='vlad.oles@proton.me',
     packages=['euclidean_hausdorff'],
     url='http://pypi.python.org/pypi/euclidean-hausdorff/',
-    description='Approximating the Euclidean Hausdorff Distance',
-    long_description=open('README.MD').read(),
+    description='Approximating the Euclidean–Hausdorff distance',
+    long_description=open('README.md').read(),
     install_requires=[
         "scipy >= 1.12.0",
         "sortedcontainers >= 2.4.0",
