@@ -44,7 +44,7 @@ class TestEuclHaus(unittest.TestCase):
         dEH, _ = upper_heuristic(cube, transformed_cube)
         assert np.isclose(0, np.round(dEH, 2))
 
-    def test_random_clouds_heuristic(self):
+    def test_random_3d_clouds_heuristic(self):
         A_coords = np.random.randn(100, 3)
         T = Transformation(np.array([-1, 2, -3]), [np.pi / 3, np.pi / 3, np.pi / 3], True)
         B_coords = T.apply(A_coords)
@@ -52,6 +52,14 @@ class TestEuclHaus(unittest.TestCase):
         dH = max(A.asymm_dH(B), B.asymm_dH(A))
         dEH, _ = upper_heuristic(A_coords, B_coords, n_parts=3)
         assert dEH < dH
+
+    def test_random_2d_clouds_heuristic_err_ub(self):
+        A_coords = np.random.randn(100, 2)
+        T = Transformation(np.array([-1, 2]), [np.pi / 3], True)
+        B_coords = T.apply(A_coords)
+        _, err_ub = upper_heuristic(A_coords, B_coords, n_parts=10)
+        assert err_ub < .52
+
 
 
 if __name__ == "__main__":
