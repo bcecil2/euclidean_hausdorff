@@ -125,7 +125,7 @@ def upper_exhaustive(A_coords, B_coords, target_err, proper_rigid=False, verbose
 
 
 def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
-                    proper_rigid=False, n_parts=2, verbose=0):
+                    proper_rigid=False, p=2, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance using greedy multiscale grid search.
 
@@ -134,7 +134,7 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
     :param max_n_restarts: limit of restarts (occur when next level yields no improvement), int
     :param improv_margin: relative decrease in dH to count as improvement, float
     :param proper_rigid: whether to consider only proper rigid transformations, bool
-    :param n_parts: number of parts to split a grid cell into (2 means dyadic grid), int
+    :param p: number of parts to split a grid cell into (2 means dyadic grid), int
     :param verbose: detalization level in the output, int
     :return: approximate distance, error upper bound
     """
@@ -149,9 +149,9 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
         return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
 
     def zoom_in(delta_center, rho_center, level):
-        level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / n_parts**level
-        deltas, _ = make_grid(delta_center, level_a_delta/n_parts, 2*r, cube_size=level_a_delta)
-        rhos, _ = make_grid(rho_center, level_a_rho/n_parts, np.pi, cube_size=level_a_rho)
+        level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / p ** level
+        deltas, _ = make_grid(delta_center, level_a_delta / p, 2 * r, cube_size=level_a_delta)
+        rhos, _ = make_grid(rho_center, level_a_rho / p, np.pi, cube_size=level_a_rho)
         return deltas, rhos
 
     # Create a list of sorted (by dH) queues of grid vertices to zoom in on or prune for each level.
@@ -159,7 +159,7 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
     grid_center = (center_delta, center_rho)
     Qs = [SortedList()]
     Qs[0].add((calc_dH(*grid_center), grid_center))
-    lvl = min_unexpl_lvl = 0
+    lvl = 0
     n_restarts = 0
 
     # Multiscale search until reached the limit of restarts (which happen after
@@ -169,7 +169,7 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
         if verbose > 1:
             print(f'{best_dH=:.5f}, {n_restarts=}, '
                   f'Qs={list(map(len, Qs))}, max_dHs={[Q[0][0] for Q in Qs if Q]},'
-                  f'Ls={[calc_dH_diff_ub(eps_delta / n_parts**i, eps_rho / n_parts**i) for i in range(min_unexpl_lvl, len(Qs))]}')
+                  f'Ls={[calc_dH_diff_ub(eps_delta / p ** i, eps_rho / p ** i) for i in range(len(Qs))]}')
 
         _, (delta, rho) = Qs[lvl].pop(0)
 
@@ -191,32 +191,15 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
             best_dH = best_child_dH
             n_restarts = 0  # reset the counter of no-improvement iterations
 
-            # Prune grid vertices zooming in on which cannot improve best dH.
-            for prune_lvl in range(min_unexpl_lvl, len(Qs)):
-                prune_lvl_err_ub = calc_dH_diff_ub(
-                    eps_delta / n_parts**prune_lvl, eps_rho / n_parts**prune_lvl)
-                prune_thresh = best_dH + prune_lvl_err_ub
-                n_points_to_retain = Qs[prune_lvl].bisect_left((prune_thresh, ))
-                for _ in range(len(Qs[prune_lvl]) - n_points_to_retain):
-                    Qs[prune_lvl].pop()
-
         # If no child vertex is a better candidate to zoom in on...
         else:
             n_restarts += 1  # update the counter of no-improvement iterations
-            lvl = min_unexpl_lvl    # choose the current best grid vertex to explore next
-
-        # Update the smallest unexplored level and the associated error bound.
-        while not Qs[min_unexpl_lvl]:
-            min_unexpl_lvl += 1
-            lvl = max(lvl, min_unexpl_lvl)
-            if verbose:
-                print(f'updated depth range to {min_unexpl_lvl}-{len(Qs) - 1}')
 
     # Calculate the error bound based on the maximum possible distance from true optimum
     # to the known grid vertices.
     min_dH_possible = np.inf
-    for lvl in range(min_unexpl_lvl, len(Qs)):
-        lvl_err_ub = calc_dH_diff_ub(eps_delta / n_parts ** lvl, eps_rho / n_parts ** lvl)
+    for lvl in range(len(Qs)):
+        lvl_err_ub = calc_dH_diff_ub(eps_delta / p**lvl, eps_rho / p**lvl)
         # For each known grid vertex, calculate smallest dH in its "coverage".
         for dH, _ in Qs[lvl]:
             min_dH_in_coverage = max(dH - lvl_err_ub, 0)

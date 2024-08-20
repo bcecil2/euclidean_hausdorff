@@ -16,7 +16,7 @@ class TestEuclHaus(unittest.TestCase):
         T = Transformation(np.array([1, 2]), [np.pi / 7], False)
         transformed_box = T.apply(box)
 
-        dEH, _ = upper_heuristic(box, transformed_box, n_parts=10)
+        dEH, _ = upper_heuristic(box, transformed_box, p=10)
         assert np.isclose(0, np.round(dEH, 2))
 
     def test_box_exact_deh(self):
@@ -50,14 +50,14 @@ class TestEuclHaus(unittest.TestCase):
         B_coords = T.apply(A_coords)
         A, B = map(PointCloud, [A_coords, B_coords])
         dH = max(A.asymm_dH(B), B.asymm_dH(A))
-        dEH, _ = upper_heuristic(A_coords, B_coords, n_parts=3)
+        dEH, _ = upper_heuristic(A_coords, B_coords, p=3)
         assert dEH < dH
 
     def test_random_2d_clouds_heuristic_err_ub(self):
         A_coords = np.random.randn(100, 2)
         T = Transformation(np.array([-1, 2]), [np.pi / 3], True)
         B_coords = T.apply(A_coords)
-        _, err_ub = upper_heuristic(A_coords, B_coords, n_parts=10)
+        _, err_ub = upper_heuristic(A_coords, B_coords, p=10)
         assert err_ub < .52
 
 
