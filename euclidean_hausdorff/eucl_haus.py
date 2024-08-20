@@ -194,6 +194,13 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
         # If no child vertex is a better candidate to zoom in on...
         else:
             n_restarts += 1  # update the counter of no-improvement iterations
+            # Find level of the current best grid vertex to explore next.
+            dH = np.inf
+            for candidate_lvl in range(len(Qs)):
+                if Qs[candidate_lvl]:
+                    candidate_dH, _ = Qs[candidate_lvl][0]
+                    if candidate_dH < dH:
+                        dH, lvl = candidate_dH, candidate_lvl
 
     # Calculate the error bound based on the maximum possible distance from true optimum
     # to the known grid vertices.
