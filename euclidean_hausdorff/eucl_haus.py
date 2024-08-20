@@ -154,7 +154,7 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
         rhos, _ = make_grid(rho_center, level_a_rho/n_parts, np.pi, cube_size=level_a_rho)
         return deltas, rhos
 
-    # Create a list of sorted (by dH) queues of grid points to zoom in on or prune for each level.
+    # Create a list of sorted (by dH) queues of grid vertices to zoom in on or prune for each level.
     center_delta, center_rho = (0,)*dim_delta, (0,)*dim_rho
     grid_center = (center_delta, center_rho)
     Qs = [SortedList()]
@@ -164,16 +164,16 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
 
     # Multiscale search until reached the limit of restarts (which happen after
     # not achieving improvement at the next level).
-    best_dH = err_ub = np.inf
+    best_dH = np.inf
     while n_restarts <= max_n_restarts:
         if verbose > 1:
-            print(f'{best_dH=:.5f}, err_ub={err_ub:.5f}, {n_restarts=}, '
+            print(f'{best_dH=:.5f}, {n_restarts=}, '
                   f'Qs={list(map(len, Qs))}, max_dHs={[Q[0][0] for Q in Qs if Q]},'
                   f'Ls={[calc_dH_diff_ub(eps_delta / n_parts**i, eps_rho / n_parts**i) for i in range(min_unexpl_lvl, len(Qs))]}')
 
         _, (delta, rho) = Qs[lvl].pop(0)
 
-        # Zoom in on the currently best grid point.
+        # Zoom in on the currently best grid vertex.
         child_deltas, child_rhos = zoom_in(delta, rho, lvl)
         children = list(product(map(tuple, child_deltas), map(tuple, child_rhos)))
         child_dHs = list(starmap(calc_dH, children))
@@ -185,14 +185,13 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
             Qs.append(Q)
         Q.update(zip(child_dHs, children))
 
-        # If some child point delivers a non-marginal improvement...
+        # If some child vertex delivers a non-marginal improvement...
         if best_child_dH < best_dH * (1 - improv_margin):
             lvl += 1
             best_dH = best_child_dH
-            err_ub = min(best_dH, err_ub)
             n_restarts = 0  # reset the counter of no-improvement iterations
 
-            # Prune grid points zooming in on which cannot improve best dH.
+            # Prune grid vertices zooming in on which cannot improve best dH.
             for prune_lvl in range(min_unexpl_lvl, len(Qs)):
                 prune_lvl_err_ub = calc_dH_diff_ub(
                     eps_delta / n_parts**prune_lvl, eps_rho / n_parts**prune_lvl)
@@ -201,19 +200,28 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
                 for _ in range(len(Qs[prune_lvl]) - n_points_to_retain):
                     Qs[prune_lvl].pop()
 
-        # If no child point is a better candidate to zoom in on...
+        # If no child vertex is a better candidate to zoom in on...
         else:
             n_restarts += 1  # update the counter of no-improvement iterations
-            lvl = min_unexpl_lvl    # choose the current best grid point to explore next
+            lvl = min_unexpl_lvl    # choose the current best grid vertex to explore next
 
         # Update the smallest unexplored level and the associated error bound.
         while not Qs[min_unexpl_lvl]:
             min_unexpl_lvl += 1
             lvl = max(lvl, min_unexpl_lvl)
-            min_unexpl_lvl_err_ub = calc_dH_diff_ub(
-                eps_delta / n_parts**min_unexpl_lvl, eps_rho / n_parts**min_unexpl_lvl)
-            err_ub = min(min_unexpl_lvl_err_ub, err_ub)
             if verbose:
                 print(f'updated depth range to {min_unexpl_lvl}-{len(Qs) - 1}')
+
+    # Calculate the error bound based on the maximum possible distance from true optimum
+    # to the known grid vertices.
+    min_dH_possible = np.inf
+    for lvl in range(min_unexpl_lvl, len(Qs)):
+        lvl_err_ub = calc_dH_diff_ub(eps_delta / n_parts ** lvl, eps_rho / n_parts ** lvl)
+        # For each known grid vertex, calculate smallest dH in its "coverage".
+        for dH, _ in Qs[lvl]:
+            min_dH_in_coverage = max(dH - lvl_err_ub, 0)
+            min_dH_possible = min(min_dH_possible, min_dH_in_coverage)
+
+    err_ub = best_dH - min_dH_possible
 
     return best_dH, err_ub
