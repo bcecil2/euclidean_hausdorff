@@ -2,12 +2,12 @@ from distutils.core import setup
 
 setup(
     name='euclidean_hausdorff',
-    version='1.0.2',
+    version='1.0.3',
     author='Vladyslav Oles, Blake Cecil',
     author_email='vlad.oles@proton.me',
     packages=['euclidean_hausdorff'],
     url='http://pypi.python.org/pypi/euclidean-hausdorff/',
-    description='Approximating the Euclidean–Hausdorff distance',
+    description="quick approximation of the Gromov–Hausdorff distance using Euclidean isometries",
     long_description=open('README.md').read(),
     install_requires=[
         "scipy >= 1.12.0",

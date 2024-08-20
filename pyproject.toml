@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "euclidean_hausdorff"
-version = "1.0.2"
+version = "1.0.3"
 license={file="LICENSE"}
 dynamic=["dependencies"]
 authors = [
     {name="Vladyslav Oles", email="vlad.oles@proton.me"},
     {name="Blake Cecil"}
 ]
-description = "package for effienct computation of euclidean hausdorff distance"
+description = "quick approximation of the Gromov–Hausdorff distance using Euclidean isometries"
 readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
