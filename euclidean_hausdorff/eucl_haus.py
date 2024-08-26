@@ -215,3 +215,62 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
     err_ub = best_dH - min_dH_possible
 
     return best_dH, err_ub
+
+
+def upper_exhaustive_heuristic(A_coords, B_coords, target_err, proper_rigid=False, p=2, verbose=0):
+    """
+    Approximate the Euclidean–Hausdorff distance using greedy (wrt error) multiscale grid search.
+
+    :param A_coords: points of A, (?×k)-array
+    :param B_coords: points of B, (?×k)-array
+    :param target_err: upper bound of additive approximation error, float
+    :param proper_rigid: whether to consider only proper rigid transformations, bool
+    :param p: number of parts to split a grid cell into (2 means dyadic grid), int
+    :param verbose: detalization level in the output, int
+    :return: approximate distance, error upper bound
+    """
+    calc_dH, r, dim_delta, dim_rho = upper_init(
+        A_coords, B_coords, proper_rigid=proper_rigid, verbose=verbose)
+
+    # Calculate initial cell sizes/covering radii for ∆ and P.
+    a_delta, a_rho = 2*r, 1 if dim_delta == 2 else 2
+    eps_delta, eps_rho = a_delta * np.sqrt(dim_delta) / 2, a_rho * np.sqrt(dim_rho) / 2
+
+    def calc_dH_diff_ub(lvl):
+        delta_diff, rho_diff = np.array([eps_delta, eps_rho]) / p**lvl
+        return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
+
+    def zoom_in(delta_center, rho_center, level):
+        level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / p ** level
+        deltas, _ = make_grid(delta_center, level_a_delta / p, 2 * r, cube_size=level_a_delta)
+        rhos, _ = make_grid(rho_center, level_a_rho / p, np.pi, cube_size=level_a_rho)
+        return deltas, rhos
+
+    # Create a list of sorted (by dH) queues of grid vertices to zoom in on or prune for each level.
+    center_delta, center_rho = (0,)*dim_delta, (0,)*dim_rho
+    grid_center = (center_delta, center_rho)
+    lvl = 0
+    Q = SortedList()
+    Q.add((calc_dH(*grid_center) - calc_dH_diff_ub(lvl), grid_center, lvl))
+
+    # Multiscale search until reached the target error.
+    min_found_dH = np.inf
+    min_possible_dH = 0   # possible on the unexplored part of the domain
+    while min_found_dH - min_possible_dH > target_err:
+        if verbose > 1:
+            print(f'{min_found_dH=:.5f}, {min_possible_dH=:.5f}')
+
+        min_possible_dH, (delta, rho), lvl = Q.pop(0)
+
+        # Zoom in on the currently best grid vertex.
+        child_deltas, child_rhos = zoom_in(delta, rho, lvl)
+        children = list(product(map(tuple, child_deltas), map(tuple, child_rhos)))
+
+        child_dHs = np.array(list(starmap(calc_dH, children)))
+        min_found_dH = min(min_found_dH, child_dHs.min())
+        child_possible_dHs = child_dHs - calc_dH_diff_ub(lvl + 1)
+        child_possible_dHs[child_possible_dHs < 0] = 0
+
+        Q.update(zip(child_possible_dHs, children, [lvl + 1] * len(children)))
+
+    return min_found_dH, min_found_dH - min_possible_dH
