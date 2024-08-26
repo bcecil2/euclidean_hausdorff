@@ -1,11 +1,19 @@
 import numpy as np
-from scipy import optimize
+from scipy import optimize, spatial as sp
 from itertools import product, starmap
 from sortedcontainers import SortedList
 from tqdm import tqdm
 
 from .point_cloud import PointCloud
 from .transformation import Transformation
+
+
+def diam(coords):
+    hull = sp.ConvexHull(coords)
+    hull_coords = coords[hull.vertices]
+    candidate_distances = sp.distance.cdist(hull_coords, hull_coords)
+
+    return candidate_distances.max()
 
 
 def make_grid(center, cell_size, ball_rad, cube_size=None):
@@ -231,6 +239,7 @@ def upper_exhaustive_heuristic(A_coords, B_coords, target_err, proper_rigid=Fals
     """
     calc_dH, r, dim_delta, dim_rho = upper_init(
         A_coords, B_coords, proper_rigid=proper_rigid, verbose=verbose)
+    print(f'{target_err=:.3f}')
 
     # Calculate initial cell sizes/covering radii for ∆ and P.
     a_delta, a_rho = 2*r, 1 if dim_delta == 2 else 2
@@ -251,14 +260,14 @@ def upper_exhaustive_heuristic(A_coords, B_coords, target_err, proper_rigid=Fals
     grid_center = (center_delta, center_rho)
     lvl = 0
     Q = SortedList()
-    Q.add((calc_dH(*grid_center) - calc_dH_diff_ub(lvl), grid_center, lvl))
+    Q.add((max(0, calc_dH(*grid_center) - calc_dH_diff_ub(lvl)), grid_center, lvl))
 
     # Multiscale search until reached the target error.
     min_found_dH = np.inf
     min_possible_dH = 0   # possible on the unexplored part of the domain
     while min_found_dH - min_possible_dH > target_err:
         if verbose > 1:
-            print(f'{min_found_dH=:.5f}, {min_possible_dH=:.5f}')
+            print(f'{min_found_dH=:.5f}, {min_possible_dH=:.5f}, {len(Q)=}')
 
         min_possible_dH, (delta, rho), lvl = Q.pop(0)
 
