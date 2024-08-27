@@ -1,2 +1,2 @@
-from euclidean_hausdorff.eucl_haus import upper_heuristic
-from euclidean_hausdorff.eucl_haus import upper_exhaustive
+from euclidean_hausdorff.eucl_haus import upper
+from euclidean_hausdorff.transformation import Transformation

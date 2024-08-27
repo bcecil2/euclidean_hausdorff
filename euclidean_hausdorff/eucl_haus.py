@@ -16,29 +16,30 @@ def diam(coords):
     return candidate_distances.max()
 
 
-def make_grid(center, cell_size, ball_rad, cube_size=None):
+def make_grid(center, a, r, l=None):
     """
-    Compile a grid with cell size a on the intersection of cube [-l/2, l/2]^k + {c} and ball B(0, r).
+    Compile a grid with cell size a covering the intersection of
+    the cube [-l/2, l/2]^k + {c} and ball B(0, r).
 
     :param center: cube center c, k-array
-    :param cell_size: cell side length a, float
-    :param ball_rad: ball radius r, float
-    :param cube_size: cube side length l, float
-    :return: (?, k)-array of grid vertices, cell_size
+    :param a: side length of a grid cell, float
+    :param r: ball radius, float
+    :param l: side length of the cube, float
+    :return: (?, k)-array of grid vertices, updated a (for divisibility)
     """
     # Assume the smallest cube containing the ball if not given.
-    cube_size = cube_size or 2*ball_rad
+    l = l or 2 * r
 
     # Reduce cell size without increasing the cell count.
-    n_cells = int(np.ceil(cube_size / cell_size))
-    cell_size = cube_size / n_cells
+    n_cells = int(np.ceil(l / a))
+    a = l / n_cells
 
     # Calculate covering radius.
     k = len(center)
-    covering_rad = np.sqrt(k) * cell_size / 2
+    covering_rad = np.sqrt(k) * a / 2
 
     # Calculate vertex positions separately in each dimension.
-    vert_offsets = np.linspace(-(cube_size-cell_size)/2, (cube_size-cell_size)/2, n_cells)
+    vert_offsets = np.linspace(-(l - a) / 2, (l - a) / 2, n_cells)
     vert_positions = np.add.outer(center, vert_offsets)
 
     # Generate vertex coordinates.
@@ -47,245 +48,141 @@ def make_grid(center, cell_size, ball_rad, cube_size=None):
 
     # Retain only the vertices covering the ball.
     lengths = np.linalg.norm(vertex_coords, axis=1)
-    is_covering = lengths <= ball_rad + covering_rad
+    is_covering = lengths <= r + covering_rad
     vertex_coords = vertex_coords[is_covering]
     lengths = lengths[is_covering]
 
     # Project vertices outside of the ball onto the ball.
-    is_outside = lengths > ball_rad
+    is_outside = lengths > r
     vertex_coords[is_outside] /= lengths[is_outside][:, None]
 
-    return vertex_coords, cell_size
+    return vertex_coords, a
 
 
-def upper_init(A_coords, B_coords, proper_rigid=False, verbose=0):
+def upper(A_coords, B_coords, target_acc=None, max_n_no_improv=None, improv_margin=.01,
+          proper_rigid=False, p=2, verbose=0):
     """
-    Initialize objects and make checks for the Euclidean–Hausdorff distance computation.
+    Approximate the Euclidean–Hausdorff distance using multiscale grid search. The search
+    terminates when additive approximation error is ≤ target_acc*max_diam OR when the
+    smallest dH found does not improve after max_n_no_improv iterations (depending on
+    whether target_acc or max_n_no_improv is set, accordingly)
+
     :param A_coords: points of A, (?×k)-array
     :param B_coords: points of B, (?×k)-array
+    :param target_acc: target accuracy as a percentage of larger diameter, float
+    :param max_n_no_improv: max number of steps with no improvement of min dH, int
+    :param improv_margin: relative decrease in dH to count as improvement, float
     :param proper_rigid: whether to consider only proper rigid transformations, bool
+    :param p: number of parts to split a grid cell into (e.g. 2 for dyadic), int
     :param verbose: detalization level in the output, int
-    :return: function for computing the Hausdorff distance, radius containing the normalized spaces,
-        translational dimension, rotational dimension
+    :return: approximate dEH, upper bound of additive approximation error
     """
     # Initialize point clouds.
     A, B = map(PointCloud, [A_coords, B_coords])
     normalized_coords = np.concatenate([A.coords, B.coords])
     _, k = normalized_coords.shape
     assert k in {2, 3}, 'only 2D and 3D spaces are supported'
+    assert (target_acc is None) != (max_n_no_improv is None), \
+        'either target_err or max_n_no_improv must be specified'
 
-    # Initialize search grid parameters.
+    # Initialize parameters of the multiscale search grid.
     r = np.linalg.norm(normalized_coords, axis=1).max()
-    if verbose:
-        print(f'{r=:.5f}')
     dim_delta, dim_rho = k, k * (k - 1) // 2
     sigmas = [False] if proper_rigid else [False, True]
+    a_delta, a_rho = 4*r, 2 if dim_delta == 2 else 4    # level-0 cell sizes (s.t. ∆ has 1 point)
+    eps_delta, eps_rho = a_delta * np.sqrt(dim_delta) / 2, a_rho * np.sqrt(dim_rho) / 2 # level-0 covering radii
 
-    # Define calculation of the smallest Hausdorff distance under a translation-rotation combo.
-    def calc_dH(delta, rho):
+    # Initialize queue with the multiscale search grid vertices.
+    Q = SortedList()
+
+    # Determine search type and approximation error bound (if relevant).
+    if target_acc is not None:
+        is_exact = True
+        max_diam = max(map(diam, [A.coords, B.coords]))
+        target_err = target_acc * max_diam
+        if verbose > 0:
+            print(f'{r=:.4f}, {target_err=:.4f}')
+    else:
+        is_exact = False
+        if verbose > 0:
+            print(f'{r=:.5f}, {max_n_no_improv=}')
+
+    # Define functions for multiscale search.
+    def calc_dH(delta, rho):    # calculate (smallest) dH for a translation-rotation combo
         dH = np.inf
         for sigma in sigmas:
             T = Transformation(delta, rho, sigma)
             sigma_dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
             dH = min(dH, sigma_dH)
-
         return dH
 
-    return calc_dH, r, dim_delta, dim_rho
-
-
-def upper_exhaustive(A_coords, B_coords, target_err, proper_rigid=False, verbose=0):
-    """
-    Approximate the Euclidean–Hausdorff distance to the desired error bound
-    using exhaustive grid search.
-
-    :param A_coords: points of A, (?×k)-array
-    :param B_coords: points of B, (?×k)-array
-    :param target_err: upper bound of additive approximation error, float
-    :param proper_rigid: whether to consider only proper rigid transformations, bool
-    :param verbose: detalization level in the output, int
-    :return: approximate distance, error upper bound
-    """
-    calc_dH, r, dim_delta, dim_rho = upper_init(
-        A_coords, B_coords, proper_rigid=proper_rigid, verbose=verbose)
-
-    # Find optimal covering radii of the two search grids.
-    def obj_grad(eps_delta):
-        return (np.arccos(1 - (target_err - eps_delta)**2 / (2 * r**2)) - 2 * eps_delta /
-                np.sqrt(4 * r**2 - (target_err - eps_delta)**2))
-
-    eps_delta, = optimize.fsolve(obj_grad, target_err/2)
-    eps_rho = np.arccos(1 - (target_err - eps_delta)**2 / (2 * r**2))
-    assert np.isclose(target_err, eps_delta + np.sqrt(2*(1 - np.cos(eps_rho)))*r), \
-        f"covering radius of translation grid {eps_delta=} was found incorrectly"
-
-    # Make the grid delivering desired error bound.
-    delta_center, rho_center = map(np.zeros, [dim_delta, dim_rho])
-    deltas, a_delta = make_grid(delta_center, 2*eps_delta / np.sqrt(dim_delta), 2*r)
-    rhos, a_rho = make_grid(rho_center, 2*eps_rho / np.sqrt(dim_rho), np.pi)
-    err_ub = a_delta * np.sqrt(dim_delta)/2 + a_rho * np.sqrt(dim_rho)/2
-
-    # Exhaustively search the grid.
-    delta_rhos = tqdm(product(deltas, rhos), total=len(deltas) * len(rhos), desc="grid vertices")
-    best_dH = min(starmap(calc_dH, delta_rhos))
-
-    return best_dH, err_ub
-
-
-def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
-                    proper_rigid=False, p=2, verbose=0):
-    """
-    Approximate the Euclidean–Hausdorff distance using greedy multiscale grid search.
-
-    :param A_coords: points of A, (?×k)-array
-    :param B_coords: points of B, (?×k)-array
-    :param max_n_restarts: limit of restarts (occur when next level yields no improvement), int
-    :param improv_margin: relative decrease in dH to count as improvement, float
-    :param proper_rigid: whether to consider only proper rigid transformations, bool
-    :param p: number of parts to split a grid cell into (2 means dyadic grid), int
-    :param verbose: detalization level in the output, int
-    :return: approximate distance, error upper bound
-    """
-    calc_dH, r, dim_delta, dim_rho = upper_init(
-        A_coords, B_coords, proper_rigid=proper_rigid, verbose=verbose)
-
-    # Calculate initial cell sizes/covering radii for ∆ and P.
-    a_delta, a_rho = 2*r, 1 if dim_delta == 2 else 2
-    eps_delta, eps_rho = a_delta * np.sqrt(dim_delta) / 2, a_rho * np.sqrt(dim_rho) / 2
-
-    def calc_dH_diff_ub(delta_diff, rho_diff):
-        return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
-
-    def zoom_in(delta_center, rho_center, level):
-        level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / p ** level
-        deltas, _ = make_grid(delta_center, level_a_delta / p, 2 * r, cube_size=level_a_delta)
-        rhos, _ = make_grid(rho_center, level_a_rho / p, np.pi, cube_size=level_a_rho)
-        return deltas, rhos
-
-    # Create a list of sorted (by dH) queues of grid vertices to zoom in on or prune for each level.
-    center_delta, center_rho = (0,)*dim_delta, (0,)*dim_rho
-    grid_center = (center_delta, center_rho)
-    Qs = [SortedList()]
-    Qs[0].add((calc_dH(*grid_center), grid_center))
-    lvl = 0
-    n_restarts = 0
-
-    # Multiscale search until reached the limit of restarts (which happen after
-    # not achieving improvement at the next level).
-    best_dH = np.inf
-    while n_restarts <= max_n_restarts:
-        if verbose > 1:
-            print(f'{best_dH=:.5f}, {n_restarts=}, '
-                  f'Qs={list(map(len, Qs))}, max_dHs={[Q[0][0] for Q in Qs if Q]},'
-                  f'Ls={[calc_dH_diff_ub(eps_delta / p ** i, eps_rho / p ** i) for i in range(len(Qs))]}')
-            if verbose > 2:
-                for i in range(len(Qs)):
-                    grid_vertices = [q[1] for q in Qs[i]]
-                    grid_vertices = [([round(x, 2) for x in rho], [round(x, 2) for x in delta])
-                                     for rho, delta in grid_vertices]
-                    print(f'level {i}: {grid_vertices}')
-
-        _, (delta, rho) = Qs[lvl].pop(0)
-
-        # Zoom in on the currently best grid vertex.
-        child_deltas, child_rhos = zoom_in(delta, rho, lvl)
-        children = list(product(map(tuple, child_deltas), map(tuple, child_rhos)))
-        child_dHs = list(starmap(calc_dH, children))
-        best_child_dH = min(child_dHs)
-        try:
-            Q = Qs[lvl + 1]
-        except IndexError:
-            Q = SortedList()
-            Qs.append(Q)
-        Q.update(zip(child_dHs, children))
-
-        # If some child vertex delivers a non-marginal improvement...
-        if best_child_dH < best_dH * (1 - improv_margin):
-            lvl += 1
-            best_dH = best_child_dH
-            n_restarts = 0  # reset the counter of no-improvement iterations
-
-        # If no child vertex is a better candidate to zoom in on...
-        else:
-            n_restarts += 1  # update the counter of no-improvement iterations
-            # Find level of the current best grid vertex to explore next.
-            dH = np.inf
-            for candidate_lvl in range(len(Qs)):
-                if Qs[candidate_lvl]:
-                    candidate_dH, _ = Qs[candidate_lvl][0]
-                    if candidate_dH < dH:
-                        dH, lvl = candidate_dH, candidate_lvl
-
-    # Calculate the error bound based on the maximum possible distance from true optimum
-    # to the known grid vertices.
-    min_dH_possible = np.inf
-    for lvl in range(len(Qs)):
-        lvl_err_ub = calc_dH_diff_ub(eps_delta / p**lvl, eps_rho / p**lvl)
-        # For each known grid vertex, calculate smallest dH in its "coverage".
-        for dH, _ in Qs[lvl]:
-            min_dH_in_coverage = max(dH - lvl_err_ub, 0)
-            min_dH_possible = min(min_dH_possible, min_dH_in_coverage)
-
-    err_ub = best_dH - min_dH_possible
-
-    return best_dH, err_ub
-
-
-def upper_exhaustive_heuristic(A_coords, B_coords, target_err, proper_rigid=False, p=2, verbose=0):
-    """
-    Approximate the Euclidean–Hausdorff distance using greedy (wrt error) multiscale grid search.
-
-    :param A_coords: points of A, (?×k)-array
-    :param B_coords: points of B, (?×k)-array
-    :param target_err: upper bound of additive approximation error, float
-    :param proper_rigid: whether to consider only proper rigid transformations, bool
-    :param p: number of parts to split a grid cell into (2 means dyadic grid), int
-    :param verbose: detalization level in the output, int
-    :return: approximate distance, error upper bound
-    """
-    calc_dH, r, dim_delta, dim_rho = upper_init(
-        A_coords, B_coords, proper_rigid=proper_rigid, verbose=verbose)
-    print(f'{target_err=:.3f}')
-
-    # Calculate initial cell sizes/covering radii for ∆ and P.
-    a_delta, a_rho = 2*r, 1 if dim_delta == 2 else 2
-    eps_delta, eps_rho = a_delta * np.sqrt(dim_delta) / 2, a_rho * np.sqrt(dim_rho) / 2
-
-    def calc_dH_diff_ub(lvl):
+    def calc_dH_diff_ub(lvl):   # calculate Lipschitz-based bound for dH discrepancy
         delta_diff, rho_diff = np.array([eps_delta, eps_rho]) / p**lvl
         return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
 
-    def zoom_in(delta_center, rho_center, level):
+    def zoom_in(delta_center, rho_center, level):   # produce next-level offsprings of a grid vertex
         level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / p ** level
-        deltas, _ = make_grid(delta_center, level_a_delta / p, 2 * r, cube_size=level_a_delta)
-        rhos, _ = make_grid(rho_center, level_a_rho / p, np.pi, cube_size=level_a_rho)
+        deltas, _ = make_grid(delta_center, level_a_delta / p, 2 * r, l=level_a_delta)
+        rhos, _ = make_grid(rho_center, level_a_rho / p, np.pi, l=level_a_rho)
         return deltas, rhos
 
-    # Create a list of sorted (by dH) queues of grid vertices to zoom in on or prune for each level.
-    center_delta, center_rho = (0,)*dim_delta, (0,)*dim_rho
-    grid_center = (center_delta, center_rho)
-    lvl = 0
-    Q = SortedList()
-    Q.add((max(0, calc_dH(*grid_center) - calc_dH_diff_ub(lvl)), grid_center, lvl))
+    def process_grid_vertex_coords(deltas, rhos):
+        vertex_coords = list(product(map(tuple, deltas), map(tuple, rhos)))
+        dHs = np.array(list(starmap(calc_dH, vertex_coords)))
+        return dHs, vertex_coords
 
-    # Multiscale search until reached the target error.
-    min_found_dH = np.inf
-    min_possible_dH = 0   # possible on the unexplored part of the domain
-    while min_found_dH - min_possible_dH > target_err:
+    if is_exact:    # storing min dH possible in the covering area of the vertex in the queue
+        def update_grid(deltas, rhos, lvl, min_found_dH, n_no_improv):
+            dHs, vertices = process_grid_vertex_coords(deltas, rhos)
+            possible_dHs = dHs - calc_dH_diff_ub(lvl)
+            possible_dHs[possible_dHs < 0] = 0
+            Q.update(zip(possible_dHs, vertices, [lvl] * len(vertices)))
+            min_possible_dH, *_ = Q[0]
+            min_found_dH = min(min_found_dH, dHs.min())
+            return min_found_dH, min_possible_dH, None
+
+        def check_termination(min_found_dH, min_possible_dH, n_no_improv):
+            return min_found_dH - min_possible_dH <= target_err
+
+    else:   # storing dH at the vertex in the queue
+        def update_grid(deltas, rhos, lvl, min_found_dH, n_no_improv):
+            dHs, vertices = process_grid_vertex_coords(deltas, rhos)
+            Q.update(zip(dHs, vertices, [lvl] * len(vertices)))
+            min_dH = dHs.min()
+            if min_dH < min_found_dH * (1 - improv_margin):
+                min_found_dH = min_dH
+            else:
+                n_no_improv += 1
+            return min_found_dH, None, n_no_improv
+
+        def check_termination(min_found_dH, min_possible_dH, n_no_improv):
+            return n_no_improv > max_n_no_improv
+
+    # Create level-0 search grid vertices.
+    init_deltas, _ = make_grid((0,)*dim_delta, a_delta, 2*r)
+    init_rhos, _ = make_grid((0,)*dim_rho, a_rho, np.pi)
+    min_found_dH, min_possible_dH, n_no_improv = update_grid(
+        init_deltas, init_rhos, 0, np.inf, 0)
+
+    # Multiscale search until reached termination condition.
+    while not check_termination(min_found_dH, min_possible_dH, n_no_improv):
         if verbose > 1:
             print(f'{min_found_dH=:.5f}, {min_possible_dH=:.5f}, {len(Q)=}')
+            if verbose > 2:
+                    grid_vertices = [(rho, delta) for _, (rho, delta), _ in Q]
+                    grid_vertices = [([round(x, 2) for x in rho], [round(x, 2) for x in delta])
+                                     for rho, delta in grid_vertices]
+                    print(f'{grid_vertices}')
 
-        min_possible_dH, (delta, rho), lvl = Q.pop(0)
+        _, (delta, rho), lvl = Q.pop(0)
 
         # Zoom in on the currently best grid vertex.
         child_deltas, child_rhos = zoom_in(delta, rho, lvl)
-        children = list(product(map(tuple, child_deltas), map(tuple, child_rhos)))
+        min_found_dH, min_possible_dH, n_no_improv = update_grid(
+            child_deltas, child_rhos, lvl + 1, min_found_dH, n_no_improv)
 
-        child_dHs = np.array(list(starmap(calc_dH, children)))
-        min_found_dH = min(min_found_dH, child_dHs.min())
-        child_possible_dHs = child_dHs - calc_dH_diff_ub(lvl + 1)
-        child_possible_dHs[child_possible_dHs < 0] = 0
-
-        Q.update(zip(child_possible_dHs, children, [lvl + 1] * len(children)))
+    # Find min possible dH if the search was not exact.
+    if not is_exact:
+        min_possible_dH = max(0, min(dH - calc_dH_diff_ub(lvl) for dH, _, lvl in Q))
 
     return min_found_dH, min_found_dH - min_possible_dH
