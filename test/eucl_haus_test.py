@@ -1,9 +1,7 @@
 import numpy as np
 import unittest
 
-from euclidean_hausdorff.eucl_haus import upper_heuristic, upper_exhaustive
-from euclidean_hausdorff.transformation import Transformation
-from euclidean_hausdorff.point_cloud import PointCloud
+from euclidean_hausdorff import upper, Transformation, PointCloud
 
 
 class TestEuclHaus(unittest.TestCase):
@@ -15,9 +13,8 @@ class TestEuclHaus(unittest.TestCase):
                         [1, -1]])
         T = Transformation(np.array([1, 2]), [np.pi / 7], False)
         transformed_box = T.apply(box)
-        A, B = map(PointCloud, [box, transformed_box])
 
-        dEH, err_ub = upper_heuristic(A.coords, B.coords, p=10)
+        dEH, err_ub = upper(box, transformed_box, p=10, max_n_no_improv=0)
         assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
         assert np.isclose(0, np.round(dEH, 2))
 
@@ -28,9 +25,9 @@ class TestEuclHaus(unittest.TestCase):
                         [1, -1]])
         T = Transformation(np.array([1, 2]), [np.pi / 7], False)
         transformed_box = T.apply(box)
-        A, B = map(PointCloud, [box, transformed_box])
 
-        dEH, _ = upper_exhaustive(A.coords, B.coords, target_err=.4)
+        dEH, err_ub = upper(box, transformed_box, target_acc=.001)
+        assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
         assert np.isclose(0, np.round(dEH, 1))
 
     def test_cube_heuristic_deh(self):
@@ -45,9 +42,8 @@ class TestEuclHaus(unittest.TestCase):
         T = Transformation(np.array([1, 2, 3]), [np.pi / 7, np.pi / 3, 0], False)
         transformed_cube = T.apply(cube)
         A, B = map(PointCloud, [cube, transformed_cube])
-
         dH = max(A.asymm_dH(B), B.asymm_dH(A))
-        dEH, err_ub = upper_heuristic(A.coords, B.coords, p=2)
+        dEH, err_ub = upper(cube, transformed_cube, max_n_no_improv=0)
         assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
         assert dEH < dH
 
@@ -56,9 +52,8 @@ class TestEuclHaus(unittest.TestCase):
         T = Transformation(np.array([-1, 2]), [np.pi / 3], True)
         B_coords = T.apply(A_coords)
         A, B = map(PointCloud, [A_coords, B_coords])
-
         dH = max(A.asymm_dH(B), B.asymm_dH(A))
-        dEH, err_ub = upper_heuristic(A.coords, B.coords, p=2)
+        dEH, err_ub = upper(A_coords, B_coords, max_n_no_improv=0)
         assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
         assert dEH < dH
 
@@ -67,9 +62,8 @@ class TestEuclHaus(unittest.TestCase):
         T = Transformation(np.array([-1, 2, -3]), [np.pi / 3, np.pi / 3, np.pi / 3], True)
         B_coords = T.apply(A_coords)
         A, B = map(PointCloud, [A_coords, B_coords])
-
         dH = max(A.asymm_dH(B), B.asymm_dH(A))
-        dEH, err_ub = upper_heuristic(A.coords, B.coords, p=2)
+        dEH, err_ub = upper(A_coords, B_coords, max_n_no_improv=0)
         assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
         assert dEH < dH
 
