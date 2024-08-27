@@ -178,6 +178,12 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
             print(f'{best_dH=:.5f}, {n_restarts=}, '
                   f'Qs={list(map(len, Qs))}, max_dHs={[Q[0][0] for Q in Qs if Q]},'
                   f'Ls={[calc_dH_diff_ub(eps_delta / p ** i, eps_rho / p ** i) for i in range(len(Qs))]}')
+            if verbose > 2:
+                for i in range(len(Qs)):
+                    grid_vertices = [q[1] for q in Qs[i]]
+                    grid_vertices = [([round(x, 2) for x in rho], [round(x, 2) for x in delta])
+                                     for rho, delta in grid_vertices]
+                    print(f'level {i}: {grid_vertices}')
 
         _, (delta, rho) = Qs[lvl].pop(0)
 

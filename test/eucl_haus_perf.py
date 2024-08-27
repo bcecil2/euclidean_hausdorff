@@ -17,9 +17,9 @@ class PerfEuclHaus(unittest.TestCase):
     target_err = .2 * max(map(diam, [A_coords, B_coords]))
 
     def test_random_2d_clouds_heuristic(self):
-        p = 10
+        p = 2
         tic = time.time()
-        deh, err_ub = upper_heuristic(self.A.coords, self.B.coords, p=p, verbose=2)
+        deh, err_ub = upper_heuristic(self.A.coords, self.B.coords, p=p, verbose=3)
         toc = time.time()
         print(f'heuristic ({p=}): {deh=:.4f}, {err_ub=:.4f} ({toc-tic:.0f}s)')
 

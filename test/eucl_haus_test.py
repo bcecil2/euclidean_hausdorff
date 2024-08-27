@@ -72,7 +72,8 @@ class TestEuclHaus(unittest.TestCase):
         A_coords = np.random.randn(100, 2)
         T = Transformation(np.array([-1, 2]), [np.pi / 3], True)
         B_coords = T.apply(A_coords)
-        deh, err_ub = upper_heuristic(A_coords, B_coords, p=10)
+        A, B = map(PointCloud, [A_coords, B_coords])
+        deh, err_ub = upper_heuristic(A.coords, B.coords, p=10)
         print(f'{deh=:.4f}, {err_ub=:.4f}')
         assert err_ub < .52
 
