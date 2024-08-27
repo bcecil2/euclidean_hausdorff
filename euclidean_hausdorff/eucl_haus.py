@@ -1,8 +1,7 @@
 import numpy as np
-from scipy import optimize, spatial as sp
+from scipy import spatial as sp
 from itertools import product, starmap
 from sortedcontainers import SortedList
-from tqdm import tqdm
 
 from .point_cloud import PointCloud
 from .transformation import Transformation
