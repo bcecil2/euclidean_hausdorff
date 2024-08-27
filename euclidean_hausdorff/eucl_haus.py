@@ -142,29 +142,31 @@ def upper_heuristic(A_coords, B_coords, max_n_restarts=0, improv_margin=.01,
         A_coords, B_coords, proper_rigid=proper_rigid, verbose=verbose)
 
     # Calculate initial cell sizes/covering radii for ∆ and P.
-    a_delta, a_rho = 2*r, 1 if dim_delta == 2 else 2
+    a_delta, a_rho = 4*r, 2 if dim_delta == 2 else 4
     eps_delta, eps_rho = a_delta * np.sqrt(dim_delta) / 2, a_rho * np.sqrt(dim_rho) / 2
 
     def calc_dH_diff_ub(delta_diff, rho_diff):
         return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
 
-    def zoom_in(delta_center, rho_center, level):
+    def zoom_in(center_delta, center_rho, level):
         level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / p ** level
-        deltas, _ = make_grid(delta_center, level_a_delta / p, 2 * r, cube_size=level_a_delta)
-        rhos, _ = make_grid(rho_center, level_a_rho / p, np.pi, cube_size=level_a_rho)
+        deltas, _ = make_grid(center_delta, level_a_delta / p, 2 * r, cube_size=level_a_delta)
+        rhos, _ = make_grid(center_rho, level_a_rho / p, np.pi, cube_size=level_a_rho)
         return deltas, rhos
 
     # Create a list of sorted (by dH) queues of grid vertices to zoom in on or prune for each level.
-    center_delta, center_rho = (0,)*dim_delta, (0,)*dim_rho
-    grid_center = (center_delta, center_rho)
+    init_deltas, _ = make_grid((0,)*dim_delta, a_delta, 2*r)
+    init_rhos, _ = make_grid((0,)*dim_rho, a_rho, np.pi)
+    init_grid_vertices = list(product(map(tuple, init_deltas), map(tuple, init_rhos)))
+    init_dHs = list(starmap(calc_dH, init_grid_vertices))
     Qs = [SortedList()]
-    Qs[0].add((calc_dH(*grid_center), grid_center))
+    Qs[0].update(zip(init_dHs, init_grid_vertices))
     lvl = 0
     n_restarts = 0
 
     # Multiscale search until reached the limit of restarts (which happen after
     # not achieving improvement at the next level).
-    best_dH = np.inf
+    best_dH = min(init_dHs)
     while n_restarts <= max_n_restarts:
         if verbose > 1:
             print(f'{best_dH=:.5f}, {n_restarts=}, '
