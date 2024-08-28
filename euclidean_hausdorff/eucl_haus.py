@@ -148,10 +148,9 @@ def upper(A_coords, B_coords, target_acc=None, max_n_no_improv=None, improv_marg
             dHs, vertices = process_grid_vertex_coords(deltas, rhos)
             Q.update(zip(dHs, vertices, [lvl] * len(vertices)))
             min_dH = dHs.min()
-            if min_dH < min_found_dH * (1 - improv_margin):
-                min_found_dH = min_dH
-            else:
-                n_no_improv += 1
+            if min_dH >= min_found_dH * (1 - improv_margin):
+                n_no_improv += 1    # no improvement beyond marginal
+            min_found_dH = min(min_found_dH, min_dH)
             return min_found_dH, None, n_no_improv
 
         def check_termination(min_found_dH, min_possible_dH, n_no_improv):
