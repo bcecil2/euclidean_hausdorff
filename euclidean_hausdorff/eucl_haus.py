@@ -7,6 +7,10 @@ from .point_cloud import PointCloud
 from .transformation import Transformation
 
 
+DEFAULT_MAX_N_NO_IMPROV = 0
+DEFAULT_IMPROV_MARGIN = .01
+
+
 def diam(coords):
     hull = sp.ConvexHull(coords)
     hull_coords = coords[hull.vertices]
@@ -58,8 +62,8 @@ def make_grid(center, a, r, l=None):
     return vertex_coords, a
 
 
-def upper(A_coords, B_coords, target_acc=None, max_n_no_improv=None, improv_margin=.01,
-          proper_rigid=False, p=2, verbose=0):
+def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=None,
+          improv_margin=None, proper_rigid=False, p=2, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance using multiscale grid search. The search
     terminates when additive approximation error is ≤ target_acc*max_diam OR when the
@@ -68,7 +72,8 @@ def upper(A_coords, B_coords, target_acc=None, max_n_no_improv=None, improv_marg
 
     :param A_coords: points of A, (?×k)-array
     :param B_coords: points of B, (?×k)-array
-    :param target_acc: target accuracy as a percentage of larger diameter, float
+    :param target_acc: target (upper bound of) accuracy as a percentage of larger diameter, float
+    :param target_err: target (upper bound of) additive approximation error, float
     :param max_n_no_improv: max number of steps with no improvement of min dH, int
     :param improv_margin: relative decrease in dH to count as improvement, float
     :param proper_rigid: whether to consider only proper rigid transformations, bool
@@ -80,9 +85,22 @@ def upper(A_coords, B_coords, target_acc=None, max_n_no_improv=None, improv_marg
     A, B = map(PointCloud, [A_coords, B_coords])
     normalized_coords = np.concatenate([A.coords, B.coords])
     _, k = normalized_coords.shape
+
+    # Check parameter correctness.
     assert k in {2, 3}, 'only 2D and 3D spaces are supported'
-    assert (target_acc is None) != (max_n_no_improv is None), \
-        'either target_err or max_n_no_improv must be specified'
+    assert target_acc is None or target_err is None, \
+        'only one of target_acc and target_err can be specified'
+    is_exact = target_acc is not None or target_err is not None
+    if is_exact:
+        assert max_n_no_improv is None, \
+            'max_n_no_improv cannot be used together with target accuracy/error'
+        assert improv_margin is None, \
+            'improv_margin can not be used together with target accuracy/error'
+    else:
+        if max_n_no_improv is None:
+            max_n_no_improv = DEFAULT_MAX_N_NO_IMPROV
+        if improv_margin is None:
+            improv_margin = DEFAULT_IMPROV_MARGIN
 
     # Initialize parameters of the multiscale search grid.
     r = np.linalg.norm(normalized_coords, axis=1).max()
