@@ -12,7 +12,7 @@ authors = [
     {name="Vladyslav Oles", email="vlad.oles@proton.me"},
     {name="Blake Cecil"}
 ]
-description = "quick approximation of the Gromov–Hausdorff distance using Euclidean isometries"
+description = "quick approximation of the Gromov–Hausdorff distance restricted to Euclidean isometries"
 readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
