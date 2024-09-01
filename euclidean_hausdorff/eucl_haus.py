@@ -19,47 +19,47 @@ def diam(coords):
     return candidate_distances.max()
 
 
-def make_grid(center, a, r, l=None):
+def make_grid(center, h, r, l=None):
     """
-    Compile a grid with cell size a covering the intersection of
+    Compile a grid with cell size h covering the intersection of
     the cube [-l/2, l/2]^k + {c} and ball B(0, r).
 
     :param center: cube center c, k-array
-    :param a: side length of a grid cell, float
+    :param h: side length of a grid cell, float
     :param r: ball radius, float
     :param l: side length of the cube, float
-    :return: (?, k)-array of grid vertices, updated a (for divisibility)
+    :return: (?, k)-array of grid points, updated a (for divisibility)
     """
     # Assume the smallest cube containing the ball if not given.
     l = l or 2 * r
 
     # Reduce cell size without increasing the cell count.
-    n_cells = int(np.ceil(l / a))
-    a = l / n_cells
+    n_cells = int(np.ceil(l / h))
+    h = l / n_cells
 
     # Calculate covering radius.
     k = len(center)
-    covering_rad = np.sqrt(k) * a / 2
+    covering_rad = np.sqrt(k) * h / 2
 
-    # Calculate vertex positions separately in each dimension.
-    vert_offsets = np.linspace(-(l - a) / 2, (l - a) / 2, n_cells)
-    vert_positions = np.add.outer(center, vert_offsets)
+    # Calculate grid point positions separately in each dimension.
+    offsets_from_center = np.linspace(-(l - h) / 2, (l - h) / 2, n_cells)
+    positions = np.add.outer(center, offsets_from_center)
 
-    # Generate vertex coordinates.
-    k = len(vert_positions)
-    vertex_coords = np.reshape(np.meshgrid(*vert_positions), (k, -1)).T
+    # Compile grid point coordinates.
+    k = len(positions)
+    coords = np.reshape(np.meshgrid(*positions), (k, -1)).T
 
-    # Retain only the vertices covering the ball.
-    lengths = np.linalg.norm(vertex_coords, axis=1)
+    # Retain only the grid points covering the ball.
+    lengths = np.linalg.norm(coords, axis=1)
     is_covering = lengths <= r + covering_rad
-    vertex_coords = vertex_coords[is_covering]
+    coords = coords[is_covering]
     lengths = lengths[is_covering]
 
-    # Project vertices outside of the ball onto the ball.
+    # Project grid points outside of the ball onto the ball.
     is_outside = lengths > r
-    vertex_coords[is_outside] /= lengths[is_outside][:, None]
+    coords[is_outside] /= lengths[is_outside][:, None]
 
-    return vertex_coords, a
+    return coords, h
 
 
 def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=None,
@@ -106,10 +106,10 @@ def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=
     r = np.linalg.norm(normalized_coords, axis=1).max()
     dim_delta, dim_rho = k, k * (k - 1) // 2
     sigmas = [False] if proper_rigid else [False, True]
-    a_delta, a_rho = 4*r, 2 if dim_delta == 2 else 4    # level-0 cell sizes (s.t. ∆ has 1 point)
-    eps_delta, eps_rho = a_delta * np.sqrt(dim_delta) / 2, a_rho * np.sqrt(dim_rho) / 2 # level-0 covering radii
+    h_delta, h_rho = 4*r, 2 if dim_delta == 2 else 4    # level-0 cell sizes (s.t. ∆ has 1 point)
+    eps_delta, eps_rho = h_delta * np.sqrt(dim_delta) / 2, h_rho * np.sqrt(dim_rho) / 2 # level-0 covering radii
 
-    # Initialize queue with the multiscale search grid vertices.
+    # Initialize queue with the multiscale search grid points.
     Q = SortedList()
 
     # Determine search type and approximation error bound (if relevant).
@@ -137,23 +137,23 @@ def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=
         delta_diff, rho_diff = np.array([eps_delta, eps_rho]) / p**lvl
         return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
 
-    def zoom_in(delta_center, rho_center, level):   # produce next-level offsprings of a grid vertex
-        level_a_delta, level_a_rho = np.array([a_delta, a_rho]) / p ** level
-        deltas, _ = make_grid(delta_center, level_a_delta / p, 2 * r, l=level_a_delta)
-        rhos, _ = make_grid(rho_center, level_a_rho / p, np.pi, l=level_a_rho)
+    def zoom_in(delta_center, rho_center, lvl):   # produce next-level offsprings of a grid point
+        lvl_h_delta, lvl_h_rho = np.array([h_delta, h_rho]) / p**lvl
+        deltas, _ = make_grid(delta_center, lvl_h_delta / p, 2*r, l=lvl_h_delta)
+        rhos, _ = make_grid(rho_center, lvl_h_rho / p, np.pi, l=lvl_h_rho)
         return deltas, rhos
 
-    def process_grid_vertex_coords(deltas, rhos):
-        vertex_coords = list(product(map(tuple, deltas), map(tuple, rhos)))
-        dHs = np.array(list(starmap(calc_dH, vertex_coords)))
-        return dHs, vertex_coords
+    def process_grid_point_coords(deltas, rhos):
+        grid_point_coords = list(product(map(tuple, deltas), map(tuple, rhos)))
+        dHs = np.array(list(starmap(calc_dH, grid_point_coords)))
+        return dHs, grid_point_coords
 
-    if is_exact:    # storing min dH possible in the covering area of the vertex in the queue
+    if is_exact:    # storing min dH possible in the covering area of the grid point in the queue
         def update_grid(deltas, rhos, lvl, min_found_dH, n_no_improv):
-            dHs, vertices = process_grid_vertex_coords(deltas, rhos)
+            dHs, grid_points = process_grid_point_coords(deltas, rhos)
             possible_dHs = dHs - calc_dH_diff_ub(lvl)
             possible_dHs[possible_dHs < 0] = 0
-            Q.update(zip(possible_dHs, vertices, [lvl] * len(vertices)))
+            Q.update(zip(possible_dHs, grid_points, [lvl] * len(grid_points)))
             min_possible_dH, *_ = Q[0]
             min_found_dH = min(min_found_dH, dHs.min())
             return min_found_dH, min_possible_dH, None
@@ -161,10 +161,10 @@ def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=
         def check_termination(min_found_dH, min_possible_dH, n_no_improv):
             return min_found_dH - min_possible_dH <= target_err
 
-    else:   # storing dH at the vertex in the queue
+    else:   # storing dH at the grid point in the queue
         def update_grid(deltas, rhos, lvl, min_found_dH, n_no_improv):
-            dHs, vertices = process_grid_vertex_coords(deltas, rhos)
-            Q.update(zip(dHs, vertices, [lvl] * len(vertices)))
+            dHs, grid_points = process_grid_point_coords(deltas, rhos)
+            Q.update(zip(dHs, grid_points, [lvl] * len(grid_points)))
             min_dH = dHs.min()
             if min_dH >= min_found_dH * (1 - improv_margin):
                 n_no_improv += 1    # no improvement beyond marginal
@@ -174,9 +174,9 @@ def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=
         def check_termination(min_found_dH, min_possible_dH, n_no_improv):
             return n_no_improv > max_n_no_improv
 
-    # Create level-0 search grid vertices.
-    init_deltas, _ = make_grid((0,)*dim_delta, a_delta, 2*r)
-    init_rhos, _ = make_grid((0,)*dim_rho, a_rho, np.pi)
+    # Create search grid points of level 0.
+    init_deltas, _ = make_grid((0,)*dim_delta, h_delta, 2*r)
+    init_rhos, _ = make_grid((0,)*dim_rho, h_rho, np.pi)
     min_found_dH, min_possible_dH, n_no_improv = update_grid(
         init_deltas, init_rhos, 0, np.inf, 0)
 
@@ -185,14 +185,14 @@ def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=
         if verbose > 1:
             print(f'{min_found_dH=:.5f}, {min_possible_dH=:.5f}, {len(Q)=}')
             if verbose > 2:
-                    grid_vertices = [(rho, delta) for _, (rho, delta), _ in Q]
-                    grid_vertices = [([round(x, 2) for x in rho], [round(x, 2) for x in delta])
-                                     for rho, delta in grid_vertices]
-                    print(f'{grid_vertices}')
+                    grid_points = [(rho, delta) for _, (rho, delta), _ in Q]
+                    grid_points = [([round(x, 2) for x in rho], [round(x, 2) for x in delta])
+                                     for rho, delta in grid_points]
+                    print(f'{grid_points}')
 
         _, (delta, rho), lvl = Q.pop(0)
 
-        # Zoom in on the currently best grid vertex.
+        # Zoom in on the currently best grid point.
         child_deltas, child_rhos = zoom_in(delta, rho, lvl)
         min_found_dH, min_possible_dH, n_no_improv = update_grid(
             child_deltas, child_rhos, lvl + 1, min_found_dH, n_no_improv)
