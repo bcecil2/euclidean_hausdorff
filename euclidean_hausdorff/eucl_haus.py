@@ -106,8 +106,9 @@ def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=
     r = np.linalg.norm(normalized_coords, axis=1).max()
     dim_delta, dim_rho = k, k * (k - 1) // 2
     sigmas = [False] if proper_rigid else [False, True]
-    eps_delta, eps_rho = 2*r, 1 if dim_delta == 2 else 2    # level-0 covering radii (s.t. ∆ has 1 point)
-    h_delta, h_rho = 2*eps_delta/np.sqrt(dim_delta), 2*eps_rho/np.sqrt(dim_rho) # level-0 cell sizes
+    eps_delta = np.sqrt(dim_delta)*2*r
+    eps_rho = eps_delta / ((2*r) if dim_delta == 2 else r)  # adhere to the optimal balance
+    h_delta, h_rho = 2*eps_delta / np.sqrt(dim_delta), 2*eps_rho / np.sqrt(dim_rho)    # level-0 cell sizes s.t. #∆=1
 
     # Initialize queue with the multiscale search grid points.
     Q = SortedList()
