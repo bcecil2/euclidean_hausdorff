@@ -12,20 +12,20 @@ class PerfEuclHaus2D(unittest.TestCase):
     B_coords = T.apply(A_coords)
 
     def test_random_2d_clouds_heuristic(self):
-        p = 2
-        max_n_no_improv = 0
-        tic = time.time()
-        deh, err_ub = upper(self.A_coords, self.B_coords, p=p, max_n_no_improv=max_n_no_improv)
-        toc = time.time()
-        print(f'heuristic 2d ({p=}, {max_n_no_improv=}): {deh=:.4f}, {err_ub=:.4f} ({toc-tic:.0f}s)')
+        for p in [2, 5]:
+            max_n_no_improv = 0
+            tic = time.time()
+            deh, err_ub = upper(self.A_coords, self.B_coords, p=p, max_n_no_improv=max_n_no_improv)
+            toc = time.time()
+            print(f'heuristic 2d ({p=}, {max_n_no_improv=}): {deh=:.4f}, {err_ub=:.4f} ({toc-tic:.0f}s)')
 
     def test_random_2d_clouds_exact(self):
-        p = 2
-        target_acc = .01
-        tic = time.time()
-        deh, err_ub = upper(self.A_coords, self.B_coords, target_acc=target_acc, p=p)
-        toc = time.time()
-        print(f'exact 2d ({p=}, {target_acc=}): {deh=:.4f}, {err_ub=:.4f} ({toc-tic:.0f}s)')
+        for p in [2, 5]:
+            target_acc = .01
+            tic = time.time()
+            deh, err_ub = upper(self.A_coords, self.B_coords, target_acc=target_acc, p=p)
+            toc = time.time()
+            print(f'exact 2d ({p=}, {target_acc=}): {deh=:.4f}, {err_ub=:.4f} ({toc-tic:.0f}s)')
 
 
 class PerfEuclHaus3D(unittest.TestCase):
