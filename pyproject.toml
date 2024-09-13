@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "euclidean_hausdorff"
-version = "1.1.2"
+version = "1.2.0"
 license={file="LICENSE"}
 dynamic=["dependencies"]
 authors = [
