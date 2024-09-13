@@ -1,14 +1,12 @@
 import numpy as np
 from scipy import spatial as sp
 from itertools import product, starmap
+from operator import itemgetter
+from collections import Counter
 from sortedcontainers import SortedList
 
 from .point_cloud import PointCloud
 from .transformation import Transformation
-
-
-DEFAULT_MAX_N_NO_IMPROV = 0
-DEFAULT_IMPROV_MARGIN = .01
 
 
 def diam(coords):
@@ -62,8 +60,8 @@ def make_grid(center, h, r, l=None):
     return coords, h
 
 
-def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=None,
-          improv_margin=None, proper_rigid=False, p=2, verbose=0):
+def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
+           target_err=None, proper_rigid=False, p=2, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance using multiscale grid search. The search
     terminates when additive approximation error is ≤ target_acc*max_diam OR when the
@@ -72,10 +70,10 @@ def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=
 
     :param A_coords: points of A, (?×k)-array
     :param B_coords: points of B, (?×k)-array
+    :param n_dH_iter: number of dH-minimizing iterations, int
+    :param n_err_ub_iter: number of error-minimizing iterations, int
     :param target_acc: target (upper bound of) accuracy as a percentage of larger diameter, float
     :param target_err: target (upper bound of) additive approximation error, float
-    :param max_n_no_improv: max number of steps with no improvement of min dH, int
-    :param improv_margin: relative decrease in dH to count as improvement, float
     :param proper_rigid: whether to consider only proper rigid transformations, bool
     :param p: number of parts to split a grid cell into (e.g. 2 for dyadic), int
     :param verbose: detalization level in the output, int
@@ -88,44 +86,28 @@ def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=
 
     # Check parameter correctness.
     assert k in {2, 3}, 'only 2D and 3D spaces are supported'
-    assert target_acc is None or target_err is None, \
-        'only one of target_acc and target_err can be specified'
-    is_exact = target_acc is not None or target_err is not None
-    if is_exact:
-        assert max_n_no_improv is None, \
-            'max_n_no_improv cannot be used together with target accuracy/error'
-        assert improv_margin is None, \
-            'improv_margin can not be used together with target accuracy/error'
-    else:
-        if max_n_no_improv is None:
-            max_n_no_improv = DEFAULT_MAX_N_NO_IMPROV
-        if improv_margin is None:
-            improv_margin = DEFAULT_IMPROV_MARGIN
+    assert n_err_ub_iter is None or target_acc is None or target_err is None, \
+        'only one of n_err_ub_iter, target_acc, and target_err can be specified'
+    assert n_dH_iter > 0 or (n_err_ub_iter and n_err_ub_iter > 0) or target_acc or target_err, \
+        ('at least one of n_dH_iter or n_err_ub_iter must be positive, or else '
+         'either of target_acc or target_err must be specified')
+
+    # Infer stopping condition for error-minimizing iterations from inputs.
+    n_err_ub_iter = n_err_ub_iter or 0
+    if target_acc is not None:
+        max_diam = max(map(diam, [A.coords, B.coords]))
+        target_err = target_acc * max_diam
+    elif target_err is None:
+        target_err = np.inf
 
     # Initialize parameters of the multiscale search grid.
     r = np.linalg.norm(normalized_coords, axis=1).max()
     dim_delta, dim_rho = k, k * (k - 1) // 2
     sigmas = [False] if proper_rigid else [False, True]
-    eps_delta = np.sqrt(dim_delta)*2*r
-    eps_rho = eps_delta / ((2*r) if dim_delta == 2 else r)  # adhere to the optimal balance
-    h_delta, h_rho = 2*eps_delta / np.sqrt(dim_delta), 2*eps_rho / np.sqrt(dim_rho)    # level-0 cell sizes s.t. #∆=1
+    eps_delta = np.sqrt(dim_delta)*2*r  # scale-0 cell radius s.t. #∆=1
+    eps_rho = eps_delta / ((2*r) if dim_delta == 2 else r)  # adhering to the optimal balance
+    a_delta, a_rho = 2*eps_delta / np.sqrt(dim_delta), 2*eps_rho / np.sqrt(dim_rho)    # scale-0 cell sizes
 
-    # Initialize queue with the multiscale search grid points.
-    Q = SortedList()
-
-    # Determine search type and approximation error bound (if relevant).
-    if target_acc is not None:
-        is_exact = True
-        max_diam = max(map(diam, [A.coords, B.coords]))
-        target_err = target_acc * max_diam
-        if verbose > 0:
-            print(f'{r=:.4f}, {target_err=:.4f}')
-    else:
-        is_exact = False
-        if verbose > 0:
-            print(f'{r=:.5f}, {max_n_no_improv=}')
-
-    # Define functions for multiscale search.
     def calc_dH(delta, rho):    # calculate (smallest) dH for a translation-rotation combo
         dH = np.inf
         for sigma in sigmas:
@@ -134,72 +116,75 @@ def upper(A_coords, B_coords, target_acc=None, target_err=None, max_n_no_improv=
             dH = min(dH, sigma_dH)
         return dH
 
-    def calc_dH_diff_ub(lvl):   # calculate Lipschitz-based bound for dH discrepancy
-        delta_diff, rho_diff = np.array([eps_delta, eps_rho]) / p**lvl
-        return delta_diff + np.sqrt(2 * (1 - np.cos(rho_diff))) * r
+    dH_diff_ubs = dict()    # maximum dH discrepancy in a grid cell w.r.t. the cell center
 
-    def zoom_in(delta_center, rho_center, lvl):   # produce next-level offsprings of a grid point
-        lvl_h_delta, lvl_h_rho = np.array([h_delta, h_rho]) / p**lvl
-        deltas, _ = make_grid(delta_center, lvl_h_delta / p, 2*r, l=lvl_h_delta)
-        rhos, _ = make_grid(rho_center, lvl_h_rho / p, np.pi, l=lvl_h_rho)
+    def calc_dH_diff_ub(i):   # calculate maximum Lipschitz-based dH discrepancy at scale i
+        try:
+            dH_diff_ub = dH_diff_ubs[i]
+        except KeyError:
+            diff_delta, diff_rho = np.array([eps_delta, eps_rho]) / p**i
+            dH_diff_ub = diff_delta + np.sqrt(2 * (1 - np.cos(diff_rho))) * r
+            dH_diff_ubs[i] = dH_diff_ub
+        return dH_diff_ub
+
+    def zoom_in(delta, rho, i):   # refine grid cell centered at (δ, ρ) at scale i
+        a_delta_i, a_rho_i = np.array([a_delta, a_rho]) / p**i
+        deltas, _ = make_grid(delta, a_delta_i / p, 2*r, l=a_delta_i)
+        rhos, _ = make_grid(rho, a_rho_i / p, np.pi, l=a_rho_i)
         return deltas, rhos
 
-    def process_grid_point_coords(deltas, rhos):
-        grid_point_coords = list(product(map(tuple, deltas), map(tuple, rhos)))
-        dHs = np.array(list(starmap(calc_dH, grid_point_coords)))
-        return dHs, grid_point_coords
+    # Initialize queue with the multiscale search grid points.
+    Qs = [SortedList()]
 
-    if is_exact:    # storing min dH possible in the covering area of the grid point in the queue
-        def update_grid(deltas, rhos, lvl, min_found_dH, n_no_improv):
-            dHs, grid_points = process_grid_point_coords(deltas, rhos)
-            possible_dHs = dHs - calc_dH_diff_ub(lvl)
-            possible_dHs[possible_dHs < 0] = 0
-            Q.update(zip(possible_dHs, grid_points, [lvl] * len(grid_points)))
-            min_possible_dH, *_ = Q[0]
-            min_found_dH = min(min_found_dH, dHs.min())
-            return min_found_dH, min_possible_dH, None
-
-        def check_termination(min_found_dH, min_possible_dH, n_no_improv):
-            return min_found_dH - min_possible_dH <= target_err
-
-    else:   # storing dH at the grid point in the queue
-        def update_grid(deltas, rhos, lvl, min_found_dH, n_no_improv):
-            dHs, grid_points = process_grid_point_coords(deltas, rhos)
-            Q.update(zip(dHs, grid_points, [lvl] * len(grid_points)))
-            min_dH = dHs.min()
-            if min_dH >= min_found_dH * (1 - improv_margin):
-                n_no_improv += 1    # no improvement beyond marginal
-            min_found_dH = min(min_found_dH, min_dH)
-            return min_found_dH, None, n_no_improv
-
-        def check_termination(min_found_dH, min_possible_dH, n_no_improv):
-            return n_no_improv > max_n_no_improv
+    def update_grid(deltas, rhos, i, min_found_dH): # process new grid points at scale i
+        new_points = list(product(map(tuple, deltas), map(tuple, rhos)))
+        new_dHs = np.array(list(starmap(calc_dH, new_points)))
+        try:
+            Q_i = Qs[i]
+        except IndexError:
+            Q_i = SortedList()
+            Qs.append(Q_i)
+        Q_i.update(zip(new_dHs, new_points))
+        min_found_dH = min(min_found_dH, Q_i[0][0])
+        best_points = [(i, Q_i[0][0], max(0, Q_i[0][0] - calc_dH_diff_ub(i))) # (scale, dH, possible_dH)
+                       for i, Q_i in enumerate(Qs) if Q_i]
+        return min_found_dH, best_points
 
     # Create search grid points of level 0.
-    init_deltas, _ = make_grid((0,)*dim_delta, h_delta, 2*r)
-    init_rhos, _ = make_grid((0,)*dim_rho, h_rho, np.pi)
-    min_found_dH, min_possible_dH, n_no_improv = update_grid(
-        init_deltas, init_rhos, 0, np.inf, 0)
+    init_deltas, _ = make_grid((0,)*dim_delta, a_delta, 2*r)
+    init_rhos, _ = make_grid((0,)*dim_rho, a_rho, np.pi)
+    min_found_dH, best_points = update_grid(init_deltas, init_rhos, 0, np.inf)
 
-    # Multiscale search until reached termination condition.
-    while not check_termination(min_found_dH, min_possible_dH, n_no_improv):
-        if verbose > 1:
-            print(f'{min_found_dH=:.5f}, {min_possible_dH=:.5f}, {len(Q)=}')
-            if verbose > 2:
-                    grid_points = [(rho, delta) for _, (rho, delta), _ in Q]
-                    grid_points = [([round(x, 2) for x in rho], [round(x, 2) for x in delta])
-                                     for rho, delta in grid_points]
-                    print(f'{grid_points}')
+    if verbose > 0:
+        print(f'{r=:.5f}, {n_dH_iter=}, {n_err_ub_iter=}, {target_err=:.5f}')
 
-        _, (delta, rho), lvl = Q.pop(0)
+    # Perform dH-minimizing iterations of multiscale search, followed by
+    # error-minimizing iterations.
+    dH_iter = err_ub_iter = 0
+    min_possible_dH = 0
+    while (dH_iter < n_dH_iter or err_ub_iter < n_err_ub_iter or
+           min_found_dH - min_possible_dH > target_err):
+        # Choose grid cell to refine.
+        if dH_iter < n_dH_iter:
+            i, *_ = min(best_points, key=itemgetter(1))
+            dH_iter += 1
+            iter_descr = 'dH-minimizing'
+        else:
+            i, _, min_possible_dH = min(best_points, key=itemgetter(2))
+            err_ub_iter += 1
+            iter_descr = 'error-minimizing'
 
-        # Zoom in on the currently best grid point.
-        child_deltas, child_rhos = zoom_in(delta, rho, lvl)
-        min_found_dH, min_possible_dH, n_no_improv = update_grid(
-            child_deltas, child_rhos, lvl + 1, min_found_dH, n_no_improv)
+        if verbose > 2:
+            Q_sizes = {j: len(Q_j) for j, Q_j in enumerate(Qs)}
+            print(f'{min_found_dH=:.5f}, {min_possible_dH=:.5f}, #Q: {Q_sizes}')
 
-    # Find min possible dH if the search was not exact.
-    if not is_exact:
-        min_possible_dH = max(0, min(dH - calc_dH_diff_ub(lvl) for dH, _, lvl in Q))
+        # Refine grid cell with the currently best grid point.
+        _, (delta, rho) = Qs[i].pop(0)
+        new_deltas, new_rhos = zoom_in(delta, rho, i)
+        min_found_dH, best_points = update_grid(new_deltas, new_rhos, i+1, min_found_dH)
+
+    # Find min possible dH if no iterations did it.
+    if err_ub_iter == 0:
+        *_, min_possible_dH = min(best_points, key=itemgetter(2))
 
     return min_found_dH, min_found_dH - min_possible_dH
