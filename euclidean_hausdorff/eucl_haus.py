@@ -158,25 +158,25 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     if verbose > 0:
         print(f'{r=:.5f}, {n_dH_iter=}, {n_err_ub_iter=}, {target_err=:.5f}')
 
-    # Perform dH-minimizing iterations of multiscale search, followed by
-    # error-minimizing iterations.
+    # Perform error-minimizing iterations of multiscale search, followed by
+    # dH-minimizing iterations.
     dH_iter = err_ub_iter = 0
     min_possible_dH = 0
     while (dH_iter < n_dH_iter or err_ub_iter < n_err_ub_iter or
            min_found_dH - min_possible_dH > target_err):
         # Choose grid cell to refine.
-        if dH_iter < n_dH_iter:
-            i, *_ = min(best_points, key=itemgetter(1))
-            dH_iter += 1
-            iter_descr = 'dH-minimizing'
-        else:
+        if err_ub_iter < n_err_ub_iter or min_found_dH - min_possible_dH > target_err:
             i, _, min_possible_dH = min(best_points, key=itemgetter(2))
             err_ub_iter += 1
             iter_descr = 'error-minimizing'
+        else:
+            i, *_ = min(best_points, key=itemgetter(1))
+            dH_iter += 1
+            iter_descr = 'dH-minimizing'
 
         if verbose > 2:
             Q_sizes = {j: len(Q_j) for j, Q_j in enumerate(Qs)}
-            print(f'{min_found_dH=:.5f}, {min_possible_dH=:.5f}, #Q: {Q_sizes}')
+            print(f'({iter_descr}) {min_found_dH=:.5f}, {min_possible_dH=:.5f}, #Q: {Q_sizes}')
 
         # Refine grid cell with the currently best grid point.
         _, (delta, rho) = Qs[i].pop(0)
