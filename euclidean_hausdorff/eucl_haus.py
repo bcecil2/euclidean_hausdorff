@@ -146,7 +146,7 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
             Qs.append(Q_i)
         Q_i.update(zip(new_dHs, new_points))
         min_found_dH = min(min_found_dH, Q_i[0][0])
-        best_points = [(i, Q_i[0][0], max(0, Q_i[0][0] - calc_dH_diff_ub(i))) # (scale, dH, possible_dH)
+        best_points = [(i, Q_i[0][0], Q_i[0][0] - calc_dH_diff_ub(i)) # (scale, dH, possible_dH)
                        for i, Q_i in enumerate(Qs) if Q_i]
         return min_found_dH, best_points
 
@@ -187,4 +187,4 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     if err_ub_iter == 0:
         *_, min_possible_dH = min(best_points, key=itemgetter(2))
 
-    return min_found_dH, min_found_dH - min_possible_dH
+    return min_found_dH, min_found_dH - max(0, min_possible_dH)
