@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v1.2.1 (Sep 15 2024)
+
+### Feature
+
+- Reordered iterations order: error-minimizing iterations are now performed before dH-minimizing iterations
+
+### Fix
+
+- Uniformized performance tests
+
 ## v1.2.0 (Sep 13 2024)
 
 ### Feature
