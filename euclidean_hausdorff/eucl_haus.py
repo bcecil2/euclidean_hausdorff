@@ -167,6 +167,7 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
         # Choose grid cell to refine.
         if err_ub_iter < n_err_ub_iter or min_found_dH - min_possible_dH > target_err:
             i, _, min_possible_dH = min(best_points, key=itemgetter(2))
+            min_possible_dH = max(0, min_possible_dH)
             err_ub_iter += 1
             iter_descr = 'error-minimizing'
         else:
@@ -186,5 +187,6 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     # Find min possible dH if no iterations did it.
     if err_ub_iter == 0:
         *_, min_possible_dH = min(best_points, key=itemgetter(2))
+        min_possible_dH = max(0, min_possible_dH)
 
-    return min_found_dH, min_found_dH - max(0, min_possible_dH)
+    return min_found_dH, min_found_dH - min_possible_dH
