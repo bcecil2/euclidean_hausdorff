@@ -20,7 +20,7 @@ def run_perf_test(descr, As_coords, Bs_coords, n_dH_err_iter_combos):
             errs.append(err_ub)
             times.append(toc - tic)
 
-        print(f'{descr} | dH_iter={n_dH_iter} | err_iter={n_err_ub_iter}: '
+        print(f'[{time.ctime()}] {descr} | dH_iter={n_dH_iter} | err_iter={n_err_ub_iter}: '
               f'avg.deh={np.mean(dehs):.4f}, avg.err={np.mean(errs):.4f}, '
               f'avg.time={np.mean(times):.4f}s (total {sum(times)/60:.1f} minutes)')
 
