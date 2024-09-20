@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v1.2.2 (Sep 20 2024)
+
+### Feature
+
+- Showing timestamps in performance tests 
+
+### Fix
+
+- Possible dH used for sorting grid points in error-minimizing iterations is not thresholded by 0 from below anymore
+
 ## v1.2.1 (Sep 15 2024)
 
 ### Feature
