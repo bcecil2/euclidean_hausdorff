@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v1.2.3 (Oct 20 2024)
+
+### Feature
+
+- Showing zoomed-in grid points when verbose > 2 
+
+### Fix
+
+- Error bound calculation now accounts for dH-minimizing iterations
+
 ## v1.2.2 (Sep 20 2024)
 
 ### Feature
