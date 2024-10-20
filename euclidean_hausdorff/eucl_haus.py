@@ -164,31 +164,31 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     min_possible_dH = 0
     while (dH_iter < n_dH_iter or err_ub_iter < n_err_ub_iter or
            min_found_dH - min_possible_dH > target_err):
-        # Choose grid cell to refine.
+        # Choose the grid cell to refine as having...
+        # ...smallest possible dH, if in an error-minimizing iteration.
         if err_ub_iter < n_err_ub_iter or min_found_dH - min_possible_dH > target_err:
             i, dH, possible_dH = min(best_points, key=itemgetter(2))
-            min_possible_dH = max(0, min_possible_dH)
             err_ub_iter += 1
             iter_descr = 'error-minimizing'
+        # ...smallest dH, if in an dH-minimizing iteration.
         else:
             i, dH, possible_dH = min(best_points, key=itemgetter(1))
             dH_iter += 1
             iter_descr = 'dH-minimizing'
 
+        # Log the iteration if needed.
         if verbose > 2:
             Q_sizes = {j: len(Q_j) for j, Q_j in enumerate(Qs)}
             print(f'({dH_iter + err_ub_iter}: {iter_descr}) {min_found_dH=:.5f}, '
-                  f'{min_possible_dH=:.5f}, #Q: {Q_sizes}, zooming in on '
-                  f'({i}, {dH:.5f}, {possible_dH:.5f})')
+                  f'#Q: {Q_sizes}, zooming in on ({i}, {dH:.5f}, {possible_dH:.5f})')
 
-        # Refine grid cell with the currently best grid point.
+        # Refine the chosen grid cell.
         _, (delta, rho) = Qs[i].pop(0)
         new_deltas, new_rhos = zoom_in(delta, rho, i)
         min_found_dH, best_points = update_grid(new_deltas, new_rhos, i+1, min_found_dH)
 
-    # Find min possible dH if no iterations did it.
-    if err_ub_iter == 0:
-        *_, min_possible_dH = min(best_points, key=itemgetter(2))
-        min_possible_dH = max(0, min_possible_dH)
+    # Find minimum possible dH to calculate error bound.
+    *_, min_possible_dH = min(best_points, key=itemgetter(2))
+    min_possible_dH = max(0, min_possible_dH)
 
     return min_found_dH, min_found_dH - min_possible_dH
