@@ -28,7 +28,7 @@ class TestEuclHaus(unittest.TestCase):
 
         dEH, err_ub = upper(box, transformed_box, target_acc=.001)
         assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
-        assert np.isclose(0, np.round(dEH, 1))
+        assert np.round(dEH, 1) == 0
 
     def test_cube_heuristic_deh(self):
         cube = np.array([[0, 0, 0],
