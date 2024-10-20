@@ -166,18 +166,20 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
            min_found_dH - min_possible_dH > target_err):
         # Choose grid cell to refine.
         if err_ub_iter < n_err_ub_iter or min_found_dH - min_possible_dH > target_err:
-            i, _, min_possible_dH = min(best_points, key=itemgetter(2))
+            i, dH, possible_dH = min(best_points, key=itemgetter(2))
             min_possible_dH = max(0, min_possible_dH)
             err_ub_iter += 1
             iter_descr = 'error-minimizing'
         else:
-            i, *_ = min(best_points, key=itemgetter(1))
+            i, dH, possible_dH = min(best_points, key=itemgetter(1))
             dH_iter += 1
             iter_descr = 'dH-minimizing'
 
         if verbose > 2:
             Q_sizes = {j: len(Q_j) for j, Q_j in enumerate(Qs)}
-            print(f'({iter_descr}) {min_found_dH=:.5f}, {min_possible_dH=:.5f}, #Q: {Q_sizes}')
+            print(f'({dH_iter + err_ub_iter}: {iter_descr}) {min_found_dH=:.5f}, '
+                  f'{min_possible_dH=:.5f}, #Q: {Q_sizes}, zooming in on '
+                  f'({i}, {dH:.5f}, {possible_dH:.5f})')
 
         # Refine grid cell with the currently best grid point.
         _, (delta, rho) = Qs[i].pop(0)
