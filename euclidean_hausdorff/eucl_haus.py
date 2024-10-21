@@ -83,6 +83,8 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     A, B = map(PointCloud, [A_coords, B_coords])
     normalized_coords = np.concatenate([A.coords, B.coords])
     _, k = normalized_coords.shape
+    upper.num_dh_computed = 0
+    upper.num_exhaustive_computed = 0
 
     # Check parameter correctness.
     assert k in {2, 3}, 'only 2D and 3D spaces are supported'
@@ -110,6 +112,7 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
 
     def calc_dH(delta, rho):    # calculate (smallest) dH for a translation-rotation combo
         dH = np.inf
+        upper.num_dh_computed += 1
         for sigma in sigmas:
             T = Transformation(delta, rho, sigma)
             sigma_dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
@@ -155,6 +158,12 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     init_rhos, _ = make_grid((0,)*dim_rho, a_rho, np.pi)
     min_found_dH, best_points = update_grid(init_deltas, init_rhos, 0, np.inf)
 
+    L = calc_dH_diff_ub(0)
+    n = len(init_rhos)*len(init_deltas)
+    n = 2*n if not proper_rigid else n
+    power = np.ceil(np.log2(L/target_err))
+    upper.num_exhaustive_computed = n*(8**power) if k == 2 else n*(64**power)
+
     if verbose > 0:
         print(f'{r=:.5f}, {n_dH_iter=}, {n_err_ub_iter=}, {target_err=:.5f}')
 
@@ -191,4 +200,4 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     *_, min_possible_dH = min(best_points, key=itemgetter(2))
     min_possible_dH = max(0, min_possible_dH)
 
-    return min_found_dH, min_found_dH - min_possible_dH
+    return min_found_dH, min_found_dH - min_possible_dH, upper.num_dh_computed, upper.num_exhaustive_computed
