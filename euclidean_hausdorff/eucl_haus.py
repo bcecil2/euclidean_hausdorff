@@ -137,17 +137,28 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     Qs = [SortedList()]
 
     def update_grid(deltas, rhos, i, min_found_dH): # process new grid points at scale i
+        # Compute dH at each grid point.
         new_points = list(product(map(tuple, deltas), map(tuple, rhos)))
         new_dHs = np.array(list(starmap(calc_dH, new_points)))
+        min_found_dH = min(min_found_dH, np.min(new_dHs))
+        new_evaluated_points = zip(new_dHs, new_points)
+
+        # Remove grid points whose cells are wholly no less than the currently best dH.
+        new_feasible_evaluated_points = filter(
+            lambda x: x[0] < min_found_dH + calc_dH_diff_ub(i), new_evaluated_points)
+
+        # Add grid points to the queue.
         try:
             Q_i = Qs[i]
         except IndexError:
             Q_i = SortedList()
             Qs.append(Q_i)
-        Q_i.update(zip(new_dHs, new_points))
-        min_found_dH = min(min_found_dH, Q_i[0][0])
-        best_points = [(i, Q_i[0][0], Q_i[0][0] - calc_dH_diff_ub(i)) # (scale, dH, possible_dH)
-                       for i, Q_i in enumerate(Qs) if Q_i]
+        Q_i.update(new_feasible_evaluated_points)
+
+        # Find best point at each scale.
+        best_points = [(j, Q_j[0][0], Q_j[0][0] - calc_dH_diff_ub(j)) # (scale, dH, possible_dH)
+                       for j, Q_j in enumerate(Qs) if Q_j]
+
         return min_found_dH, best_points
 
     # Create search grid points of level 0.
