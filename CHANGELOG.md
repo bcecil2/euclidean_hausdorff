@@ -2,6 +2,17 @@
 
 <!--next-version-placeholder-->
 
+## v1.2.4 (Oct 23 2024)
+
+### Feature
+
+- Removed storing grid points whose cells cannot improve on the currently best dH
+- Refactored the tests
+
+### Fix
+
+- Fixed application of translations
+
 ## v1.2.3 (Oct 20 2024)
 
 ### Feature
