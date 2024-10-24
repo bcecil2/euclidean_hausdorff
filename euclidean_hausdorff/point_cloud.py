@@ -10,7 +10,7 @@ class PointCloud(object):
         :param kd_tree: K-d tree on normalized points, sp.KDTree
         :param orig_centroid: pre-normalized centroid, k-array
         '''
-        self.coords = coords
+        self.coords = np.array(coords, dtype=float)
         if orig_centroid is None:
             # Shift the centroid to the origin.
             self.orig_centroid = self.coords.mean(axis=0)
