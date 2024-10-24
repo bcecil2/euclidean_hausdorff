@@ -2,7 +2,17 @@
 
 <!--next-version-placeholder-->
 
-## v1.2.4 (Oct 23 2024)
+### v1.2.5 (Oct 24 2024)
+
+### Feature
+
+- Refactored upper()
+
+### Fix
+
+- Fixed missing target_err stopping condition
+
+# v1.2.4 (Oct 23 2024)
 
 ### Feature
 
