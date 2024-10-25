@@ -100,6 +100,13 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     elif target_err is None:
         target_err = np.inf
 
+    def decide_iterations(dH_iter, err_ub_iter, min_dH_i, min_possible_dH_i):
+        do_dH_iter = dH_iter < n_dH_iter and min_dH_i is not None
+        do_err_ub_iter = err_ub > target_err or \
+                         (err_ub_iter < n_err_ub_iter and min_possible_dH_i is not None)
+
+        return do_dH_iter, do_err_ub_iter
+
     # Initialize parameters of the multiscale search grid.
     r = np.linalg.norm(normalized_coords, axis=1).max()
     dim_delta, dim_rho = k, k * (k - 1) // 2
@@ -149,10 +156,13 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
             Qs.append(Q_i)
         Q_i.update(zip(new_dHs, new_points))
 
-        # Update best dH and orune grid points whose cells cannot improve on it.
-        min_found_dH = min(min_found_dH, min(new_dHs))
-        for j, Q_j in enumerate(Qs):
-            del Q_j[Q_j.bisect_left((min_found_dH + calc_dH_diff_ub(j),)):]
+        # Update best dH and prune grid points whose cells cannot improve on it.
+        # min_found_dH = min(min_found_dH, min(new_dHs))
+        min_new_dH = min(new_dHs)
+        if min_new_dH < min_found_dH:
+            min_found_dH = min_new_dH
+            for j, Q_j in enumerate(Qs):
+                del Q_j[Q_j.bisect_left((min_found_dH + calc_dH_diff_ub(j),)):]
 
         # Find grid points with smallest dH and possible dH.
         min_dH = min_possible_dH = np.inf
@@ -171,13 +181,6 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
 
         return min_dH_i, min_possible_dH_i, min_found_dH, err_ub
 
-    def decide_iterations(dH_iter, err_ub_iter, min_dH_i, min_possible_dH_i):
-        do_dH_iter = dH_iter < n_dH_iter and min_dH_i is not None
-        do_err_ub_iter = err_ub > target_err or \
-                         (err_ub_iter < n_err_ub_iter and min_possible_dH_i is not None)
-
-        return do_dH_iter, do_err_ub_iter
-
     # Create search grid points of level 0.
     init_deltas, _ = make_grid((0,)*dim_delta, a_delta, 2*r)
     init_rhos, _ = make_grid((0,)*dim_rho, a_rho, np.pi)
@@ -194,12 +197,12 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
         dH_iter, err_ub_iter, min_dH_i, min_possible_dH_i)
     while do_dH_iter or do_err_ub_iter:
         # Choose the grid cell to refine as having...
-        # ...smallest possible dH, if in an error-minimizing iteration.
+        # ...smallest possible dH, if there are error-minimizing iterations to carry out.
         if do_err_ub_iter:
             i = min_possible_dH_i
             err_ub_iter += 1
             iter_descr = 'error-minimizing'
-        # ...smallest dH, if in an dH-minimizing iteration.
+        # ...smallest dH, otherwise (i.e. need to do dH-minimizing iterations).
         else:
             i = min_dH_i
             dH_iter += 1
