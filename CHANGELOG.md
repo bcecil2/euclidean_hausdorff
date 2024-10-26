@@ -2,6 +2,17 @@
 
 <!--next-version-placeholder-->
 
+### v1.3.0 (Oct 25 2024)
+
+### Feature
+
+- New signature for upper(): max_n_iter and dH_iter_share instead of n_dH_iter and n_err_ub_iter
+- Only pruning if there was a change to best dH
+
+### Fix
+
+- Fixed issue occurring when pruning fully empties the grid
+
 ### v1.2.5 (Oct 24 2024)
 
 ### Feature
