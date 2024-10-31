@@ -98,7 +98,7 @@ def upper(A_coords, B_coords, max_n_iter=None, target_acc=None, target_err=None,
         target_err = 0
 
     # Calculate the step at which to perform dH-minimizing iterations.
-    dH_iter_step = round(1 / dH_iter_share)
+    dH_iter_step = round(1 / dH_iter_share) if dH_iter_share > 0 else np.inf
 
     # Initialize parameters of the multiscale search grid.
     r = np.linalg.norm(normalized_coords, axis=1).max()
