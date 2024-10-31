@@ -58,20 +58,24 @@ def make_grid(center, h, r, l=None):
     return coords, h
 
 
-def upper(A_coords, B_coords, max_n_iter=None, target_acc=None, target_err=None,
-          dH_iter_share=.1, proper_rigid=False, p=2, verbose=0):
+def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=None,
+          n_dH_iter=10, proper_rigid=False, p=2, verbose=0):
     """
-    Approximate the Euclidean–Hausdorff distance using multiscale grid search. The search
-    terminates when additive approximation error is ≤ target_acc*max_diam OR when the
-    smallest dH found does not improve after max_n_no_improv iterations (depending on
-    whether target_acc or max_n_no_improv is set, accordingly)
+    Approximate the Euclidean–Hausdorff distance using multiscale grid search. Starting from
+    a crude net of the search domain, the search iteratively refines grid cells that allow for
+    the smallest value of dH in them (based on dH value at their centers and the Lipschitz
+    constants). The search terminates when the additive approximation error is ≤ target_err
+    or target_acc*max_diam (whichever is set) OR when performed n_err_ub_iter iterations (if
+    set). After this, the search iteratively refines n_dH_iter grid cells with the smallest dH
+    value at their centers.
 
     :param A_coords: points of A, (?×k)-array
     :param B_coords: points of B, (?×k)-array
+    :param n_err_ub_iter: number of error-minimizing iterations, int
     :param max_n_iter: maximum number of iterations, int
     :param target_acc: target (upper bound of) accuracy as a percentage of larger diameter, float [0, 1]
     :param target_err: target (upper bound of) additive approximation error, float
-    :param dH_iter_share: proportion of dH-minimizing iterations, float [0, 1]
+    :param n_dH_iter: number of dH-minimizing iterations, int
     :param proper_rigid: whether to consider only proper rigid transformations, bool
     :param p: number of parts to split a grid cell into (e.g. 2 for dyadic), int
     :param verbose: detalization level in the output, int
@@ -84,21 +88,18 @@ def upper(A_coords, B_coords, max_n_iter=None, target_acc=None, target_err=None,
 
     # Check parameter correctness.
     assert k in {2, 3}, 'only 2D and 3D spaces are supported'
-    assert (not max_n_iter) + (target_acc is None) + (target_err is None), \
-        'exactly one of max_n_iter, target_acc, and target_err must be specified'
+    assert bool(n_err_ub_iter) + bool(target_acc) + bool(target_err) == 1, \
+        'exactly one of n_err_ub_iter, target_acc, and target_err must be specified'
 
-    # Set maximum iterations if needed.
-    max_n_iter = max_n_iter or np.inf
+    # Infer stopping condition for error-minimizing iterations from inputs.
+    n_err_ub_iter = n_err_ub_iter or 0
 
     # Set target error if needed.
     if target_acc is not None:
         max_diam = max(map(diam, [A.coords, B.coords]))
         target_err = target_acc * max_diam
     elif target_err is None:
-        target_err = 0
-
-    # Calculate the step at which to perform dH-minimizing iterations.
-    dH_iter_step = round(1 / dH_iter_share) if dH_iter_share > 0 else np.inf
+        target_err = np.inf
 
     # Initialize parameters of the multiscale search grid.
     r = np.linalg.norm(normalized_coords, axis=1).max()
@@ -181,26 +182,31 @@ def upper(A_coords, B_coords, max_n_iter=None, target_acc=None, target_err=None,
         init_deltas, init_rhos, 0, np.inf)
 
     if verbose > 0:
-        print(f'{r=:.5f}, {max_n_iter=}, {dH_iter_step=}, {target_err=:.5f}')
+        target = f'{n_err_ub_iter=}' if n_err_ub_iter > 0 else f'{target_err=:.5f}'
+        print(f'{r=:.5f}, {target}, {n_dH_iter=}')
 
     # Perform multiscale search.
-    iter = 0
-    while iter < max_n_iter and err_ub > target_err and sum(map(len, Qs)) > 0:
+    err_ub_iter = dH_iter = 0
+    while (err_ub > target_err or err_ub_iter < n_err_ub_iter or dH_iter < n_dH_iter)\
+           and sum(map(len, Qs)) > 0:
         # Choose the grid cell to refine as having...
-        # ...smallest dH, if it's a dH-minimizing iteration.
-        if (iter + 1) % dH_iter_step == 0:
-            i = min_dH_i
-            iter_descr = 'dH-minimizing'
         # ...smallest possible dH, if it's an error-minimizing iteration.
-        else:
+        if err_ub > target_err or err_ub_iter < n_err_ub_iter:
             i = min_possible_dH_i
+            err_ub_iter += 1
             iter_descr = 'error-minimizing'
+        # ...smallest dH, if it's a dH-minimizing iteration (i.e. the search
+        # error-minimizing iterations has terminated).
+        else:
+            i = min_dH_i
+            dH_iter += 1
+            iter_descr = 'dH-minimizing'
 
         # Log the iteration if needed.
         if verbose > 2:
             Q_sizes = {j: len(Q_j) for j, Q_j in enumerate(Qs)}
             dH, _ = Qs[i][0]
-            print(f'({iter}: {iter_descr}) {min_found_dH=:.5f}, '
+            print(f'({dH_iter + err_ub_iter}: {iter_descr}) {min_found_dH=:.5f}, '
                   f'{err_ub=:.5f}, #Q: {Q_sizes}, zooming in on '
                   f'({i}, {dH:.5f}, {dH - calc_dH_diff_ub(i):.5f})')
 
@@ -209,8 +215,5 @@ def upper(A_coords, B_coords, max_n_iter=None, target_acc=None, target_err=None,
         new_deltas, new_rhos = zoom_in(delta, rho, i)
         min_dH_i, min_possible_dH_i, min_found_dH, err_ub = update_grid(
             new_deltas, new_rhos, i+1, min_found_dH)
-
-        # Increment iteration index.
-        iter += 1
 
     return min_found_dH, err_ub
