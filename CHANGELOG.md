@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+### v1.3.1 (Oct 25 2024)
+
+### Feature
+
+- New signature for upper(): n_dH_iter and n_err_ub_iter instead of max_n_iter and dH_iter_share
+
 ### v1.3.0 (Oct 25 2024)
 
 ### Feature
