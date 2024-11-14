@@ -6,73 +6,68 @@ from euclidean_hausdorff import upper, Transformation, PointCloud
 
 class TestEuclHaus(unittest.TestCase):
 
-    def test_box_heuristic_deh(self):
-        box = np.array([[1, 1],
-                        [-1, 1],
-                        [-1, -1],
-                        [1, -1]])
-        T = Transformation(np.array([1, 2]), [np.pi / 7], False)
-        transformed_box = T.apply(box)
+    box = np.array([[1, 1],
+                         [-1, 1],
+                         [-1, -1],
+                         [1, -1]])
+    transformed_box = Transformation([1, 2], [np.pi / 7], True).apply(box)
 
-        dEH, err_ub = upper(box, transformed_box, p=10)
-        assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
-        assert np.isclose(0, np.round(dEH, 2))
+    cube = np.array([[0, 0, 0],
+                     [1, 0, 0],
+                     [1, 1, 0],
+                     [0, 1, 0],
+                     [1, 0, 1],
+                     [1, 1, 1],
+                     [0, 0, 1],
+                     [0, 1, 1]])
+    transformed_cube = Transformation([1, 2, 3], [np.pi / 7, np.pi / 3, 0], False).apply(cube)
 
-    def test_box_exact_deh(self):
-        box = np.array([[1, 1],
-                        [-1, 1],
-                        [-1, -1],
-                        [1, -1]])
-        T = Transformation(np.array([1, 2]), [np.pi / 7], False)
-        transformed_box = T.apply(box)
+    coords_2d = np.random.randn(100, 2)
+    transformed_coords_2d = Transformation(
+        [-1, 2], [np.pi / 3], True).apply(coords_2d)
 
-        dEH, err_ub = upper(box, transformed_box, target_acc=.001)
-        assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
-        assert np.round(dEH, 1) == 0
+    coords_3d = np.random.randn(100, 3)
+    transformed_coords_3d = Transformation(
+        [-1, 2, -3], [np.pi / 3, np.pi / 3, np.pi / 3], True).apply(coords_3d)
 
-    def test_cube_heuristic_deh(self):
-        cube = np.array([[0, 0, 0],
-                         [1, 0, 0],
-                         [1, 1, 0],
-                         [0, 1, 0],
-                         [1, 0, 1],
-                         [1, 1, 1],
-                         [0, 0, 1],
-                         [0, 1, 1]])
-        T = Transformation(np.array([1, 2, 3]), [np.pi / 7, np.pi / 3, 0], False)
-        transformed_cube = T.apply(cube)
-        A, B = map(PointCloud, [cube, transformed_cube])
-        dH = max(A.asymm_dH(B), B.asymm_dH(A))
-        dEH, err_ub = upper(cube, transformed_cube)
-        assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
-        assert dEH < dH
+    def test_box_heuristic(self):
+        dEH, _ = upper(self.box, self.transformed_box, n_err_ub_iter=20)
+        assert dEH < .005, f'incorrect dEH {dEH} (should be near 0)'
+
+    def test_box_exact(self):
+        target_err = .001
+        dEH, err_ub = upper(self.box, self.transformed_box, target_err=target_err)
+        assert err_ub <= dEH, f'error bound {err_ub} bigger than dEH {dEH}'
+        assert err_ub <= target_err, f'error bound {err_ub} bigger than target_err {target_err}'
+
+    def test_cube_heuristic(self):
+        dEH, _ = upper(self.cube, self.transformed_cube, n_err_ub_iter=100)
+        assert dEH < .01, f'incorrect dEH {dEH} (should be near 0)'
+
+    def test_cube_exact(self):
+        target_err = .25
+        dEH, err_ub = upper(self.cube, self.transformed_cube, target_err=target_err)
+        assert err_ub <= dEH, f'error bound {err_ub} bigger than dEH {dEH}'
+        assert err_ub <= target_err, f'error bound {err_ub} bigger than target_err {target_err}'
 
     def test_random_2d_clouds_heuristic(self):
-        A_coords = np.random.randn(100, 2)
-        T = Transformation(np.array([-1, 2]), [np.pi / 3], True)
-        B_coords = T.apply(A_coords)
-        A, B = map(PointCloud, [A_coords, B_coords])
+        A, B = map(PointCloud, [self.coords_2d, self.transformed_coords_2d])
         dH = max(A.asymm_dH(B), B.asymm_dH(A))
-        dEH, err_ub = upper(A_coords, B_coords)
-        assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
-        assert dEH < dH
+        dEH, _ = upper(self.coords_2d, self.transformed_coords_2d, n_err_ub_iter=10)
+        assert dEH < dH, f'dEH {dEH}                                                                                                    is not smaller than dH {dH}'
+
+    def test_random_2d_clouds_exact(self):
+        target_err = .01
+        dEH, err_ub = upper(self.coords_2d, self.transformed_coords_2d, target_err=target_err)
+        assert err_ub <= dEH, f'error bound {err_ub} bigger than dEH {dEH}'
+        assert err_ub <= target_err, f'error bound {err_ub} bigger than target_err {target_err}'
 
     def test_random_3d_clouds_heuristic(self):
-        A_coords = np.random.randn(100, 3)
-        T = Transformation(np.array([-1, 2, -3]), [np.pi / 3, np.pi / 3, np.pi / 3], True)
-        B_coords = T.apply(A_coords)
-        A, B = map(PointCloud, [A_coords, B_coords])
+        A, B = map(PointCloud, [self.coords_3d, self.transformed_coords_3d])
         dH = max(A.asymm_dH(B), B.asymm_dH(A))
-        dEH, err_ub = upper(A_coords, B_coords)
-        assert np.isclose(dEH, err_ub), f'incorrect error bound {err_ub}'
-        assert dEH < dH
+        dEH, _ = upper(self.coords_3d, self.transformed_coords_3d, n_err_ub_iter=10)
+        assert dEH < dH, f'dEH {dEH} is not smaller than dH {dH}'
 
-    def test_random_2d_clouds_heuristic_err_ub(self):
-        A_coords = np.random.randn(100, 2)
-        T = Transformation(np.array([-1, 2]), [np.pi / 3], True)
-        B_coords = T.apply(A_coords)
-        dEH, err_ub = upper(A_coords, B_coords, p=5)
-        assert err_ub < .05
 
 if __name__ == "__main__":
     np.random.seed(0)

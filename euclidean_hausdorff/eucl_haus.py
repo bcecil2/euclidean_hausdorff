@@ -1,8 +1,6 @@
 import numpy as np
 from scipy import spatial as sp
 from itertools import product, starmap
-from operator import itemgetter
-from collections import Counter
 from sortedcontainers import SortedList
 
 from .point_cloud import PointCloud
@@ -60,20 +58,24 @@ def make_grid(center, h, r, l=None):
     return coords, h
 
 
-def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
-           target_err=None, proper_rigid=False, p=2, verbose=0):
+def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=None,
+          n_dH_iter=10, proper_rigid=False, p=2, verbose=0):
     """
-    Approximate the Euclidean–Hausdorff distance using multiscale grid search. The search
-    terminates when additive approximation error is ≤ target_acc*max_diam OR when the
-    smallest dH found does not improve after max_n_no_improv iterations (depending on
-    whether target_acc or max_n_no_improv is set, accordingly)
+    Approximate the Euclidean–Hausdorff distance using multiscale grid search. Starting from
+    a crude net of the search domain, the search iteratively refines grid cells that allow for
+    the smallest value of dH in them (based on dH value at their centers and the Lipschitz
+    constants). The search terminates when the additive approximation error is ≤ target_err
+    or target_acc*max_diam (whichever is set) OR when performed n_err_ub_iter iterations (if
+    set). After this, the search iteratively refines n_dH_iter grid cells with the smallest dH
+    value at their centers.
 
     :param A_coords: points of A, (?×k)-array
     :param B_coords: points of B, (?×k)-array
-    :param n_dH_iter: number of dH-minimizing iterations, int
     :param n_err_ub_iter: number of error-minimizing iterations, int
-    :param target_acc: target (upper bound of) accuracy as a percentage of larger diameter, float
+    :param max_n_iter: maximum number of iterations, int
+    :param target_acc: target (upper bound of) accuracy as a percentage of larger diameter, float [0, 1]
     :param target_err: target (upper bound of) additive approximation error, float
+    :param n_dH_iter: number of dH-minimizing iterations, int
     :param proper_rigid: whether to consider only proper rigid transformations, bool
     :param p: number of parts to split a grid cell into (e.g. 2 for dyadic), int
     :param verbose: detalization level in the output, int
@@ -88,14 +90,13 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
 
     # Check parameter correctness.
     assert k in {2, 3}, 'only 2D and 3D spaces are supported'
-    assert n_err_ub_iter is None or target_acc is None or target_err is None, \
-        'only one of n_err_ub_iter, target_acc, and target_err can be specified'
-    assert n_dH_iter > 0 or (n_err_ub_iter and n_err_ub_iter > 0) or target_acc or target_err, \
-        ('at least one of n_dH_iter or n_err_ub_iter must be positive, or else '
-         'either of target_acc or target_err must be specified')
+    assert bool(n_err_ub_iter) + bool(target_acc) + bool(target_err) == 1, \
+        'exactly one of n_err_ub_iter, target_acc, and target_err must be specified'
 
     # Infer stopping condition for error-minimizing iterations from inputs.
     n_err_ub_iter = n_err_ub_iter or 0
+
+    # Set target error if needed.
     if target_acc is not None:
         max_diam = max(map(diam, [A.coords, B.coords]))
         target_err = target_acc * max_diam
@@ -140,23 +141,48 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     Qs = [SortedList()]
 
     def update_grid(deltas, rhos, i, min_found_dH): # process new grid points at scale i
+        # Compute dH at each grid point.
         new_points = list(product(map(tuple, deltas), map(tuple, rhos)))
-        new_dHs = np.array(list(starmap(calc_dH, new_points)))
+        new_dHs = list(starmap(calc_dH, new_points))
+
+        # Add new grid points to the queue.
         try:
             Q_i = Qs[i]
         except IndexError:
             Q_i = SortedList()
             Qs.append(Q_i)
         Q_i.update(zip(new_dHs, new_points))
-        min_found_dH = min(min_found_dH, Q_i[0][0])
-        best_points = [(i, Q_i[0][0], Q_i[0][0] - calc_dH_diff_ub(i)) # (scale, dH, possible_dH)
-                       for i, Q_i in enumerate(Qs) if Q_i]
-        return min_found_dH, best_points
+
+        # Update best dH and prune grid points whose cells cannot improve on it.
+        # min_found_dH = min(min_found_dH, min(new_dHs))
+        min_new_dH = min(new_dHs)
+        if min_new_dH < min_found_dH:
+            min_found_dH = min_new_dH
+            for j, Q_j in enumerate(Qs):
+                del Q_j[Q_j.bisect_left((min_found_dH + calc_dH_diff_ub(j),)):]
+
+        # Find grid points with smallest dH and possible dH.
+        min_dH = min_possible_dH = np.inf
+        min_dH_i = min_possible_dH_i = None
+        for j, Q_j in enumerate(Qs):
+            if Q_j:
+                dH, _ = Q_j[0]
+                if dH < min_dH:
+                    min_dH = dH
+                    min_dH_i = j
+                possible_dH = dH - calc_dH_diff_ub(j)
+                if possible_dH < min_possible_dH:
+                    min_possible_dH = possible_dH
+                    min_possible_dH_i = j
+        err_ub = max(0, min_found_dH - max(0, min_possible_dH))
+
+        return min_dH_i, min_possible_dH_i, min_found_dH, err_ub
 
     # Create search grid points of level 0.
     init_deltas, _ = make_grid((0,)*dim_delta, a_delta, 2*r)
     init_rhos, _ = make_grid((0,)*dim_rho, a_rho, np.pi)
-    min_found_dH, best_points = update_grid(init_deltas, init_rhos, 0, np.inf)
+    min_dH_i, min_possible_dH_i, min_found_dH, err_ub = update_grid(
+        init_deltas, init_rhos, 0, np.inf)
 
     L = calc_dH_diff_ub(0)
     n = len(init_rhos)*len(init_deltas)
@@ -165,39 +191,38 @@ def upper(A_coords, B_coords, n_dH_iter=5, n_err_ub_iter=None, target_acc=None,
     upper.num_exhaustive_computed = n*(8**power) if k == 2 else n*(64**power)
 
     if verbose > 0:
-        print(f'{r=:.5f}, {n_dH_iter=}, {n_err_ub_iter=}, {target_err=:.5f}')
+        target = f'{n_err_ub_iter=}' if n_err_ub_iter > 0 else f'{target_err=:.5f}'
+        print(f'{r=:.5f}, {target}, {n_dH_iter=}')
 
-    # Perform error-minimizing iterations of multiscale search, followed by
-    # dH-minimizing iterations.
-    dH_iter = err_ub_iter = 0
-    min_possible_dH = 0
-    while (dH_iter < n_dH_iter or err_ub_iter < n_err_ub_iter or
-           min_found_dH - min_possible_dH > target_err):
+    # Perform multiscale search.
+    err_ub_iter = dH_iter = 0
+    while (err_ub > target_err or err_ub_iter < n_err_ub_iter or dH_iter < n_dH_iter)\
+           and sum(map(len, Qs)) > 0:
         # Choose the grid cell to refine as having...
-        # ...smallest possible dH, if in an error-minimizing iteration.
-        if err_ub_iter < n_err_ub_iter or min_found_dH - min_possible_dH > target_err:
-            i, dH, possible_dH = min(best_points, key=itemgetter(2))
+        # ...smallest possible dH, if it's an error-minimizing iteration.
+        if err_ub > target_err or err_ub_iter < n_err_ub_iter:
+            i = min_possible_dH_i
             err_ub_iter += 1
             iter_descr = 'error-minimizing'
-        # ...smallest dH, if in an dH-minimizing iteration.
+        # ...smallest dH, if it's a dH-minimizing iteration (i.e. the search
+        # error-minimizing iterations has terminated).
         else:
-            i, dH, possible_dH = min(best_points, key=itemgetter(1))
+            i = min_dH_i
             dH_iter += 1
             iter_descr = 'dH-minimizing'
 
         # Log the iteration if needed.
         if verbose > 2:
             Q_sizes = {j: len(Q_j) for j, Q_j in enumerate(Qs)}
+            dH, _ = Qs[i][0]
             print(f'({dH_iter + err_ub_iter}: {iter_descr}) {min_found_dH=:.5f}, '
-                  f'#Q: {Q_sizes}, zooming in on ({i}, {dH:.5f}, {possible_dH:.5f})')
+                  f'{err_ub=:.5f}, #Q: {Q_sizes}, zooming in on '
+                  f'({i}, {dH:.5f}, {dH - calc_dH_diff_ub(i):.5f})')
 
         # Refine the chosen grid cell.
         _, (delta, rho) = Qs[i].pop(0)
         new_deltas, new_rhos = zoom_in(delta, rho, i)
-        min_found_dH, best_points = update_grid(new_deltas, new_rhos, i+1, min_found_dH)
+        min_dH_i, min_possible_dH_i, min_found_dH, err_ub = update_grid(
+            new_deltas, new_rhos, i+1, min_found_dH)
 
-    # Find minimum possible dH to calculate error bound.
-    *_, min_possible_dH = min(best_points, key=itemgetter(2))
-    min_possible_dH = max(0, min_possible_dH)
-
-    return min_found_dH, min_found_dH - min_possible_dH, upper.num_dh_computed, upper.num_exhaustive_computed
+    return min_found_dH, err_ub, upper.num_dh_computed, upper.num_exhaustive_computed

@@ -4,24 +4,26 @@ from scipy import spatial as sp
 
 class PointCloud(object):
 
-    def __init__(self, coords, build_kd_tree=True):
+    def __init__(self, coords, orig_centroid=None, kd_tree=None):
         '''
         :param coords: point coordinates, (n, k)-array
-        :param kd_tree: k-d tree to speed up Hausdorff distance (or None to be computed)
+        :param kd_tree: K-d tree on normalized points, sp.KDTree
+        :param orig_centroid: pre-normalized centroid, k-array
         '''
-        self.orig_centroid = coords.mean(axis=0)
-        self.coords = coords - self.orig_centroid
-
-        if build_kd_tree:
-            # Build k-d tree on the non-transformed points.
-            self.kd_tree = sp.KDTree(self.coords)
+        self.coords = np.array(coords, dtype=float)
+        if orig_centroid is None:
+            # Shift the centroid to the origin.
+            self.orig_centroid = self.coords.mean(axis=0)
+            self.coords -= self.orig_centroid
+        else:
+            self.orig_centroid = orig_centroid
+        # Build k-d tree on the normalized points if needed.
+        self.kd_tree = kd_tree or sp.KDTree(self.coords)
 
     def transform(self, T):
         transformed_coords = T.apply(self.coords)
         transformed_self = PointCloud(
-            transformed_coords, build_kd_tree=False)
-        transformed_self.orig_centroid = self.orig_centroid
-        transformed_self.kd_tree = self.kd_tree
+            transformed_coords, orig_centroid=self.orig_centroid, kd_tree=self.kd_tree)
 
         return transformed_self
 

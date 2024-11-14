@@ -2,7 +2,7 @@ from distutils.core import setup
 
 setup(
     name='euclidean_hausdorff',
-    version='1.2.2',
+    version='1.3.1',
     author='Vladyslav Oles, Blake Cecil',
     author_email='vlad.oles@proton.me',
     packages=['euclidean_hausdorff'],
