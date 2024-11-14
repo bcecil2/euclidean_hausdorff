@@ -225,4 +225,4 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
         min_dH_i, min_possible_dH_i, min_found_dH, err_ub = update_grid(
             new_deltas, new_rhos, i+1, min_found_dH)
 
-    return min_found_dH, err_ub, upper.num_dh_computed, upper.num_exhaustive_computed
+    return min_found_dH, err_ub, upper.num_dh_computed/upper.num_exhaustive_computed
