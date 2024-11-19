@@ -59,7 +59,7 @@ def make_grid(center, h, r, l=None):
 
 
 def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=None,
-          n_dH_iter=10, proper_rigid=False, p=2, verbose=0):
+          n_dH_iter=5, proper_rigid=False, p=2, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance using multiscale grid search. Starting from
     a crude net of the search domain, the search iteratively refines grid cells that allow for
@@ -90,8 +90,8 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
 
     # Check parameter correctness.
     assert k in {2, 3}, 'only 2D and 3D spaces are supported'
-    assert bool(n_err_ub_iter) + bool(target_acc) + bool(target_err) == 1, \
-        'exactly one of n_err_ub_iter, target_acc, and target_err must be specified'
+    assert bool(n_err_ub_iter) + bool(target_acc) + bool(target_err) <= 1, \
+        'only one of n_err_ub_iter, target_acc, and target_err can be specified'
 
     # Infer stopping condition for error-minimizing iterations from inputs.
     n_err_ub_iter = n_err_ub_iter or 0
