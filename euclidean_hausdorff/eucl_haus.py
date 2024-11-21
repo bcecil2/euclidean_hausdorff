@@ -186,12 +186,14 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
     min_dH_i, min_possible_dH_i, min_found_dH, err_ub = update_grid(
         init_deltas, init_rhos, 0, np.inf)
 
-    L = calc_dH_diff_ub(0)
-    n = len(init_rhos)*len(init_deltas)
-    n = 2*n if not proper_rigid else n
-    with warnings.catch_warnings():
+    if np.isfinite(target_err):
+        L = calc_dH_diff_ub(0)
+        n = len(init_rhos)*len(init_deltas)
+        n = 2*n if not proper_rigid else n
         power = np.ceil(np.log2(L/target_err))
-    upper.num_exhaustive_computed = n*(8**power) if k == 2 else n*(64**power)
+        upper.num_exhaustive_computed = n * (8 ** power) if k == 2 else n * (64 ** power)
+    else:
+        upper.num_exhaustive_computed = np.nan
 
     if verbose > 0:
         target = f'{n_err_ub_iter=}' if n_err_ub_iter > 0 else f'{target_err=:.5f}'
