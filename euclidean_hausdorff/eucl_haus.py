@@ -150,13 +150,8 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
             Qs.append(Q_i)
         Q_i.update(zip(new_dHs, new_points))
 
-        # Update best dH and prune grid points whose cells cannot improve on it.
-        # min_found_dH = min(min_found_dH, min(new_dHs))
-        min_new_dH = min(new_dHs)
-        if min_new_dH < min_found_dH:
-            min_found_dH = min_new_dH
-            for j, Q_j in enumerate(Qs):
-                del Q_j[Q_j.bisect_left((min_found_dH + calc_dH_diff_ub(j),)):]
+        # Update best dH.
+        min_found_dH = min(min_found_dH, min(new_dHs))
 
         # Find grid points with smallest dH and possible dH.
         min_dH = min_possible_dH = np.inf
