@@ -182,8 +182,7 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
 
     # Perform multiscale search.
     err_ub_iter = dH_iter = 0
-    while (err_ub > target_err or err_ub_iter < n_err_ub_iter or dH_iter < n_dH_iter)\
-           and sum(map(len, Qs)) > 0:
+    while (err_ub > target_err or err_ub_iter < n_err_ub_iter or dH_iter < n_dH_iter):
         # Choose the grid cell to refine as having...
         # ...smallest possible dH, if it's an error-minimizing iteration.
         if err_ub > target_err or err_ub_iter < n_err_ub_iter:
