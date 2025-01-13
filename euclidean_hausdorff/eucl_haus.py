@@ -61,7 +61,7 @@ def make_grid(center, h, r, l=None):
 
 
 def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=None,
-          n_dH_iter=5, proper_rigid=False, p=2, verbose=0):
+          n_dH_iter=10, proper_rigid=False, p=2, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance using multiscale grid search. Starting from
     a crude net of the search domain, the search iteratively refines grid cells that allow for
@@ -155,13 +155,8 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
             Qs.append(Q_i)
         Q_i.update(zip(new_dHs, new_points))
 
-        # Update best dH and prune grid points whose cells cannot improve on it.
-        # min_found_dH = min(min_found_dH, min(new_dHs))
-        min_new_dH = min(new_dHs)
-        if min_new_dH < min_found_dH:
-            min_found_dH = min_new_dH
-            for j, Q_j in enumerate(Qs):
-                del Q_j[Q_j.bisect_left((min_found_dH + calc_dH_diff_ub(j),)):]
+        # Update best dH.
+        min_found_dH = min(min_found_dH, min(new_dHs))
 
         # Find grid points with smallest dH and possible dH.
         min_dH = min_possible_dH = np.inf
@@ -192,8 +187,7 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
 
     # Perform multiscale search.
     err_ub_iter = dH_iter = 0
-    while (err_ub > target_err or err_ub_iter < n_err_ub_iter or dH_iter < n_dH_iter)\
-           and sum(map(len, Qs)) > 0:
+    while (err_ub > target_err or err_ub_iter < n_err_ub_iter or dH_iter < n_dH_iter):
         # Choose the grid cell to refine as having...
         # ...smallest possible dH, if it's an error-minimizing iteration.
         if err_ub > target_err or err_ub_iter < n_err_ub_iter:
