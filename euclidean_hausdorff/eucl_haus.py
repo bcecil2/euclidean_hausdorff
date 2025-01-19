@@ -8,8 +8,14 @@ from .transformation import Transformation
 
 
 def diam(coords):
+    # Remove dimensions in which the coordinates are constant (if any).
+    non_constant_dims = np.any(coords != coords[0, :], axis=0)
+    coords = coords[:, non_constant_dims]
+
+    # Find support vertices of the convex hull.
     hull = sp.ConvexHull(coords)
     hull_coords = coords[hull.vertices]
+    
     candidate_distances = sp.distance.cdist(hull_coords, hull_coords)
 
     return candidate_distances.max()
