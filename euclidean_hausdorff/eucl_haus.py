@@ -222,12 +222,15 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
             new_deltas, new_rhos, i+1, min_found_dH)
 
     # Find size of the fixed-scale grid for exhaustive search.
-    eps_delta = (2*target_err/3) if dim_delta == 2 else target_err/2
-    eps_rho = (target_err/3/r) if dim_delta == 2 else target_err/2/r  # adhering to the optimal balance
-    a_delta, a_rho = 2*eps_delta / np.sqrt(dim_delta), 2*eps_rho / np.sqrt(dim_rho)    # scale-0 cell sizes
-    deltas, _ = make_grid((0,) * dim_delta, a_delta, 2 * r)
-    rhos, _ = make_grid((0,) * dim_rho, a_rho, np.pi)
-    n_dH_per_iter = (8 if k == 2 else 64) * (1 if proper_rigid else 2)
-    upper.num_exhaustive_computed = len(deltas) * len(rhos) * n_dH_per_iter
+    if np.isfinite(target_err):
+        eps_delta = (2*target_err/3) if dim_delta == 2 else target_err/2
+        eps_rho = (target_err/3/r) if dim_delta == 2 else target_err/2/r  # adhering to the optimal balance
+        a_delta, a_rho = 2*eps_delta / np.sqrt(dim_delta), 2*eps_rho / np.sqrt(dim_rho)    # scale-0 cell sizes
+        deltas, _ = make_grid((0,) * dim_delta, a_delta, 2 * r)
+        rhos, _ = make_grid((0,) * dim_rho, a_rho, np.pi)
+        n_dH_per_iter = (8 if k == 2 else 64) * (1 if proper_rigid else 2)
+        upper.num_exhaustive_computed = len(deltas) * len(rhos) * n_dH_per_iter
+    else:
+        upper.num_exhaustive_computed = 0
 
     return min_found_dH, err_ub, upper.num_dh_computed, upper.num_exhaustive_computed
