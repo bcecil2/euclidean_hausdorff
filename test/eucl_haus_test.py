@@ -56,6 +56,13 @@ class TestEuclHaus(unittest.TestCase):
         dEH, _ = upper(self.coords_2d, self.transformed_coords_2d, n_err_ub_iter=10)
         assert dEH < dH, f'dEH {dEH}                                                                                                    is not smaller than dH {dH}'
 
+    def test_random_2d_clouds_iter_budget_smooth(self):
+        A, B = map(PointCloud, [self.coords_2d, self.transformed_coords_2d])
+        agg = np.mean
+        dH = max(A.asymm_dH(B, agg=agg), B.asymm_dH(A, agg=agg))
+        dEH, _ = upper(self.coords_2d, self.transformed_coords_2d, n_err_ub_iter=10, agg=agg)
+        assert dEH < dH, f'dEH {dEH} is not smaller than dH {dH}'
+
     def test_random_2d_clouds_target_err(self):
         target_err = .01
         dEH, err_ub = upper(self.coords_2d, self.transformed_coords_2d, target_err=target_err)
@@ -68,6 +75,12 @@ class TestEuclHaus(unittest.TestCase):
         dEH, _ = upper(self.coords_3d, self.transformed_coords_3d, n_err_ub_iter=10)
         assert dEH < dH, f'dEH {dEH} is not smaller than dH {dH}'
 
+    def test_random_3d_clouds_iter_budget_smooth(self):
+        A, B = map(PointCloud, [self.coords_3d, self.transformed_coords_3d])
+        agg = np.mean
+        dH = max(A.asymm_dH(B, agg=agg), B.asymm_dH(A, agg=agg))
+        dEH, _ = upper(self.coords_3d, self.transformed_coords_3d, n_err_ub_iter=10, agg=agg)
+        assert dEH < dH, f'dEH {dEH} is not smaller than dH {dH}'
 
 if __name__ == "__main__":
     np.random.seed(0)
