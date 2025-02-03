@@ -30,39 +30,39 @@ class TestEuclHaus(unittest.TestCase):
     transformed_coords_3d = Transformation(
         [-1, 2, -3], [np.pi / 3, np.pi / 3, np.pi / 3], True).apply(coords_3d)
 
-    def test_box_heuristic(self):
+    def test_box_iter_budget(self):
         dEH, _ = upper(self.box, self.transformed_box, n_err_ub_iter=20)
         assert dEH < .005, f'incorrect dEH {dEH} (should be near 0)'
 
-    def test_box_exact(self):
+    def test_box_target_err(self):
         target_err = .001
         dEH, err_ub = upper(self.box, self.transformed_box, target_err=target_err)
         assert err_ub <= dEH, f'error bound {err_ub} bigger than dEH {dEH}'
         assert err_ub <= target_err, f'error bound {err_ub} bigger than target_err {target_err}'
 
-    def test_cube_heuristic(self):
+    def test_cube_iter_budget(self):
         dEH, _ = upper(self.cube, self.transformed_cube, n_err_ub_iter=100)
         assert dEH < .01, f'incorrect dEH {dEH} (should be near 0)'
 
-    def test_cube_exact(self):
+    def test_cube_target_err(self):
         target_err = .25
         dEH, err_ub = upper(self.cube, self.transformed_cube, target_err=target_err)
         assert err_ub <= dEH, f'error bound {err_ub} bigger than dEH {dEH}'
         assert err_ub <= target_err, f'error bound {err_ub} bigger than target_err {target_err}'
 
-    def test_random_2d_clouds_heuristic(self):
+    def test_random_2d_clouds_iter_budget(self):
         A, B = map(PointCloud, [self.coords_2d, self.transformed_coords_2d])
         dH = max(A.asymm_dH(B), B.asymm_dH(A))
         dEH, _ = upper(self.coords_2d, self.transformed_coords_2d, n_err_ub_iter=10)
         assert dEH < dH, f'dEH {dEH}                                                                                                    is not smaller than dH {dH}'
 
-    def test_random_2d_clouds_exact(self):
+    def test_random_2d_clouds_target_err(self):
         target_err = .01
         dEH, err_ub = upper(self.coords_2d, self.transformed_coords_2d, target_err=target_err)
         assert err_ub <= dEH, f'error bound {err_ub} bigger than dEH {dEH}'
         assert err_ub <= target_err, f'error bound {err_ub} bigger than target_err {target_err}'
 
-    def test_random_3d_clouds_heuristic(self):
+    def test_random_3d_clouds_iter_budget(self):
         A, B = map(PointCloud, [self.coords_3d, self.transformed_coords_3d])
         dH = max(A.asymm_dH(B), B.asymm_dH(A))
         dEH, _ = upper(self.coords_3d, self.transformed_coords_3d, n_err_ub_iter=10)
