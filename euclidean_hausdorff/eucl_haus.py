@@ -65,7 +65,7 @@ def make_grid(center, h, r, l=None):
 
 
 def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=None,
-          n_dH_iter=10, proper_rigid=False, p=2, verbose=0):
+          n_dH_iter=10, proper_rigid=False, agg=np.max, p=2, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance using multiscale grid search. Starting from
     a crude net of the search domain, the search iteratively refines grid cells that allow for
@@ -83,6 +83,7 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
     :param target_err: target (upper bound of) additive approximation error, float
     :param n_dH_iter: number of dH-minimizing iterations, int
     :param proper_rigid: whether to consider only proper rigid transformations, bool
+    :param agg: function for aggregating the distances (max yields dH, mean smoothes it out)
     :param p: number of parts to split a grid cell into (e.g. 2 for dyadic), int
     :param verbose: detalization level in the output, int
     :return: approximate dEH, upper bound of additive approximation error
@@ -119,7 +120,8 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
         dH = np.inf
         for sigma in sigmas:
             T = Transformation(delta, rho, sigma)
-            sigma_dH = max(A.transform(T).asymm_dH(B), B.transform(T.invert()).asymm_dH(A))
+            sigma_dH = max(A.transform(T).asymm_dH(B, agg=agg),
+                           B.transform(T.invert()).asymm_dH(A, agg=agg))
             dH = min(dH, sigma_dH)
         return dH
 

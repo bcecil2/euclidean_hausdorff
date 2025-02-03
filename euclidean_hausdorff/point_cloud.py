@@ -27,14 +27,15 @@ class PointCloud(object):
 
         return transformed_self
 
-    def asymm_dH(self, other):
+    def asymm_dH(self, other, agg=np.max):
         '''
         Find one-sided Hausdorff distance to another point cloud
 
         :param other: another point cloud, PointCloud
+        :param agg: function for aggregating the distances (max yields dH)
         :return: distance
         '''
         # Compute distances to the nearest neighbors in other.
         distances_to_other, _ = other.kd_tree.query(self.coords, workers=-1)
 
-        return np.max(distances_to_other)
+        return agg(distances_to_other)
