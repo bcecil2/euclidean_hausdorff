@@ -65,7 +65,8 @@ def make_grid(center, h, r, l=None):
 
 
 def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=None,
-          n_dH_iter=10, proper_rigid=False, agg=np.max, p=2, verbose=0):
+          n_dH_iter=10, proper_rigid=False, return_err=False, return_T=False,
+          agg=np.max, p=2, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance using multiscale grid search. Starting from
     a crude net of the search domain, the search iteratively refines grid cells that allow for
@@ -83,6 +84,8 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
     :param target_err: target (upper bound of) additive approximation error, float
     :param n_dH_iter: number of dH-minimizing iterations, int
     :param proper_rigid: whether to consider only proper rigid transformations, bool
+    :param return_err: whether to return additive approximation error, bool
+    :param return_T: whether to return (parametrization of) isometry yielding approximate dEH, bool
     :param agg: function for aggregating the distances (max yields dH, mean smoothes it out)
     :param p: number of parts to split a grid cell into (e.g. 2 for dyadic), int
     :param verbose: detalization level in the output, int
@@ -121,9 +124,11 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
         for sigma in sigmas:
             T = Transformation(delta, rho, sigma)
             sigma_dH = max(A.transform(T).asymm_dH(B, agg=agg),
-                           B.transform(T.invert()).asymm_dH(A, agg=agg))
-            dH = min(dH, sigma_dH)
-        return dH
+                     B.transform(T.invert()).asymm_dH(A, agg=agg))
+            if sigma_dH < dH:
+                best_sigma, dH = sigma, sigma_dH
+
+        return dH, best_sigma
 
     dH_diff_ubs = dict()    # maximum dH discrepancy in a grid cell w.r.t. the cell center
 
@@ -134,21 +139,25 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
             diff_delta, diff_rho = np.array([eps_delta, eps_rho]) / p**i
             dH_diff_ub = diff_delta + np.sqrt(2 * (1 - np.cos(diff_rho))) * r
             dH_diff_ubs[i] = dH_diff_ub
+
         return dH_diff_ub
 
     def zoom_in(delta, rho, i):   # refine grid cell centered at (δ, ρ) at scale i
         a_delta_i, a_rho_i = np.array([a_delta, a_rho]) / p**i
         deltas, _ = make_grid(delta, a_delta_i / p, 2*r, l=a_delta_i)
         rhos, _ = make_grid(rho, a_rho_i / p, np.pi, l=a_rho_i)
+
         return deltas, rhos
 
     # Initialize queue with the multiscale search grid points.
     Qs = [SortedList()]
 
-    def update_grid(deltas, rhos, i, min_found_dH): # process new grid points at scale i
+    def update_grid(deltas, rhos, i, min_dH_and_T): # process new grid points at scale i
         # Compute dH at each grid point.
         new_points = list(product(map(tuple, deltas), map(tuple, rhos)))
-        new_dHs = list(starmap(calc_dH, new_points))
+        new_dHs, new_sigmas = zip(*starmap(calc_dH, new_points))
+        new_dHs_Ts = list(zip(new_dHs, [point + (sigma,)
+                                        for point, sigma in zip(new_points, new_sigmas)]))
 
         # Add new grid points to the queue.
         try:
@@ -158,31 +167,33 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
             Qs.append(Q_i)
         Q_i.update(zip(new_dHs, new_points))
 
-        # Update best dH.
-        min_found_dH = min(min_found_dH, min(new_dHs))
+        # Update best dH and the point delivering it.
+        min_dH_and_T = min(min_dH_and_T, min(new_dHs_Ts))
 
-        # Find grid points with smallest dH and possible dH.
-        min_dH = min_possible_dH = np.inf
+        # Find grid points with smallest dH and smallest possible dH in their cell.
+        min_dH_in_Q = min_possible_dH = np.inf
         min_dH_i = min_possible_dH_i = None
         for j, Q_j in enumerate(Qs):
             if Q_j:
                 dH, _ = Q_j[0]
-                if dH < min_dH:
-                    min_dH = dH
+                if dH < min_dH_in_Q:
+                    min_dH_in_Q = dH
                     min_dH_i = j
                 possible_dH = dH - calc_dH_diff_ub(j)
                 if possible_dH < min_possible_dH:
                     min_possible_dH = possible_dH
                     min_possible_dH_i = j
-        err_ub = max(0, min_found_dH - max(0, min_possible_dH))
 
-        return min_dH_i, min_possible_dH_i, min_found_dH, err_ub
+        # Update error bound.
+        err_ub = max(0, min_dH_and_T[0] - max(0, min_possible_dH))
+
+        return min_dH_i, min_possible_dH_i, min_dH_and_T, err_ub
 
     # Create search grid points of level 0.
     init_deltas, _ = make_grid((0,)*dim_delta, a_delta, 2*r)
     init_rhos, _ = make_grid((0,)*dim_rho, a_rho, np.pi)
-    min_dH_i, min_possible_dH_i, min_found_dH, err_ub = update_grid(
-        init_deltas, init_rhos, 0, np.inf)
+    min_dH_i, min_possible_dH_i, min_dH_and_T, err_ub = update_grid(
+        init_deltas, init_rhos, 0, (np.inf, None))
 
     if verbose > 0:
         target = f'{n_err_ub_iter=}' if n_err_ub_iter > 0 else f'{target_err=:.5f}'
@@ -208,14 +219,27 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
         if verbose > 2:
             Q_sizes = {j: len(Q_j) for j, Q_j in enumerate(Qs)}
             dH, _ = Qs[i][0]
-            print(f'({dH_iter + err_ub_iter}: {iter_descr}) {min_found_dH=:.5f}, '
+            min_dH, best_T = min_dH_and_T
+            print(f'({dH_iter + err_ub_iter}: {iter_descr}) '
+                  f'{min_dH=:.5f} delivered by {best_T=}, '
                   f'{err_ub=:.5f}, #Q: {Q_sizes}, zooming in on '
                   f'({i}, {dH:.5f}, {dH - calc_dH_diff_ub(i):.5f})')
 
         # Refine the chosen grid cell.
         _, (delta, rho) = Qs[i].pop(0)
         new_deltas, new_rhos = zoom_in(delta, rho, i)
-        min_dH_i, min_possible_dH_i, min_found_dH, err_ub = update_grid(
-            new_deltas, new_rhos, i+1, min_found_dH)
+        min_dH_i, min_possible_dH_i, min_dH_and_T, err_ub = update_grid(
+            new_deltas, new_rhos, i+1, min_dH_and_T)
 
-    return min_found_dH, err_ub
+    # Prepare the return value.
+    min_dH, best_T = min_dH_and_T
+    if return_err or return_T:
+        ret_val = (min_dH,)
+        if return_err:
+            ret_val += (err_ub,)
+        if return_T:
+            ret_val += (best_T,)
+    else:
+        ret_val = min_dH
+
+    return ret_val

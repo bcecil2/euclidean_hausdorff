@@ -15,7 +15,7 @@ def run_perf_test(descr, As_coords, Bs_coords, param_combos):
             tic = time.time()
             deh, err_ub = upper(
                 A_coords, B_coords, n_err_ub_iter=n_err_ub_iter, target_acc=target_acc,
-                n_dH_iter=n_dH_iter)
+                n_dH_iter=n_dH_iter, return_err=True)
             toc = time.time()
             dehs.append(deh)
             errs.append(err_ub)
