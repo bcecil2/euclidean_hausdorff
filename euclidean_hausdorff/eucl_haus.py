@@ -65,7 +65,7 @@ def make_grid(center, h, r, l=None):
 
 
 def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=None,
-          n_dH_iter=10, proper_rigid=False, return_err=False, return_T=False,
+          n_dH_iter=10, special_eucl=False, return_err=False, return_T=False,
           agg=np.max, p=2, verbose=0):
     """
     Approximate the Euclidean–Hausdorff distance using multiscale grid search. Starting from
@@ -83,7 +83,7 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
     :param target_acc: target (upper bound of) accuracy as a percentage of larger diameter, float [0, 1]
     :param target_err: target (upper bound of) additive approximation error, float
     :param n_dH_iter: number of dH-minimizing iterations, int
-    :param proper_rigid: whether to consider only proper rigid transformations, bool
+    :param special_eucl: whether to consider only orientation-preserving transformations, bool
     :param return_err: whether to return additive approximation error, bool
     :param return_T: whether to return (parametrization of) isometry yielding approximate dEH, bool
     :param agg: function for aggregating the distances (max yields dH, mean smoothes it out)
@@ -114,7 +114,7 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
     # Initialize parameters of the multiscale search grid.
     r = np.linalg.norm(normalized_coords, axis=1).max()
     dim_delta, dim_rho = k, k * (k - 1) // 2
-    sigmas = [False] if proper_rigid else [False, True]
+    sigmas = [False] if special_eucl else [False, True]
     eps_delta = np.sqrt(dim_delta)*2*r  # scale-0 cell radius s.t. #∆=1
     eps_rho = eps_delta / ((2*r) if dim_delta == 2 else r)  # adhering to the optimal balance
     a_delta, a_rho = 2*eps_delta / np.sqrt(dim_delta), 2*eps_rho / np.sqrt(dim_rho)    # scale-0 cell sizes
