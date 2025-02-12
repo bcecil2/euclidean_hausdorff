@@ -80,7 +80,6 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
     :param A_coords: points of A, (?×k)-array
     :param B_coords: points of B, (?×k)-array
     :param n_err_ub_iter: number of error-minimizing iterations, int
-    :param max_n_iter: maximum number of iterations, int
     :param target_acc: target (upper bound of) accuracy as a percentage of larger diameter, float [0, 1]
     :param target_err: target (upper bound of) additive approximation error, float
     :param n_dH_iter: number of dH-minimizing iterations, int
@@ -100,6 +99,9 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
     assert k in {2, 3}, 'only 2D and 3D spaces are supported'
     assert bool(target_acc) + bool(target_err) <= 1, \
         'only one of target_acc and target_err can be specified'
+
+    # Infer stopping condition for error-minimizing iterations from inputs.
+    n_err_ub_iter = n_err_ub_iter or 0
 
     # Set target error if needed.
     if target_acc is not None:
@@ -185,12 +187,12 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
         init_deltas, init_rhos, 0, np.inf)
 
     if verbose > 0:
-        print(f'{r=:.5f}, {target_err=:.5f}, {n_iter=}')
+        print(f'{r=:.5f}, {target_err=:.5f}, {n_err_ub_iter=}, {n_dH_iter=}')
 
     # Perform multiscale search.
     err_ub_iter = dH_iter = 0
     is_improved = False
-    while (err_ub > target_err or err_ub_iter + dH_iter < n_iter):
+    while (err_ub > target_err or err_ub_iter + dH_iter < n_err_ub_iter + n_dH_iter):
         # Choose the grid cell to refine as having...
         # ...smallest possible dH, if it's an error-minimizing iteration.
         if not is_improved:
