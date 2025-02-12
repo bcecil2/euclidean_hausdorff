@@ -240,4 +240,4 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
         upper.num_exhaustive_computed = 0
 
     print(f'{dH_iter + err_ub_iter} total, {dH_iter} dH-minimizing')
-    return min_found_dH, err_ub, upper.num_dh_computed, upper.num_exhaustive_computed
+    return min_found_dH, err_ub, upper.num_dh_computed, upper.num_exhaustive_computed, err_ub_iter, dH_iter
