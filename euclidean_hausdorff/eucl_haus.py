@@ -67,7 +67,7 @@ def make_grid(center, h, r, l=None):
 
 
 def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=None,
-          n_dH_iter=10, proper_rigid=False, p=2, verbose=0, improv_threshold=None):
+          n_dH_iter=10, proper_rigid=False, p=2, verbose=0, improv_threshold=np.inf):
     """
     Approximate the Euclidean–Hausdorff distance using multiscale grid search. Starting from
     a crude net of the search domain, the search iteratively refines grid cells that allow for
