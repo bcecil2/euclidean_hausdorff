@@ -2,6 +2,22 @@
 
 <!--next-version-placeholder-->
 
+### v1.3.2 (??? ?? 2025)
+
+### Feature
+
+- Removed pruning of grid vertices for simplicity
+- Made diam() available for import
+
+### Fix
+
+- Having redundant/constant dimensions does not crush diam() anymore
+- Allowed running with no error-minimizing iterations
+
+### Documentation
+
+- Completed README.md (TODO)
+
 ### v1.3.1 (Oct 25 2024)
 
 ### Feature

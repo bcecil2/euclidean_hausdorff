@@ -1,5 +1,5 @@
 import warnings
-
+import time
 import numpy as np
 from scipy import spatial as sp
 from itertools import product, starmap
@@ -195,7 +195,7 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
     while (err_ub > target_err or err_ub_iter + dH_iter < n_err_ub_iter + n_dH_iter):
         # Choose the grid cell to refine as having...
         # ...smallest possible dH, if it's an error-minimizing iteration.
-        if not is_improved:
+        if err_ub_iter < n_err_ub_iter and (not is_improved or dH_iter == n_dH_iter):
             i = min_possible_dH_i
             err_ub_iter += 1
             iter_descr = 'error-minimizing'
@@ -217,15 +217,18 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
         # Refine the chosen grid cell.
         _, (delta, rho) = Qs[i].pop(0)
         new_deltas, new_rhos = zoom_in(delta, rho, i)
-        min_dH_i, min_possible_dH_i, new_min_found_dH, err_ub = update_grid(
+        min_dH_i, min_possible_dH_i, new_min_found_dH, new_err_ub = update_grid(
             new_deltas, new_rhos, i+1, min_found_dH)
 
         is_improved = min_found_dH - new_min_found_dH >= improv_threshold * min_found_dH
-        # if min_found_dH > new_min_found_dH:
-        #     print(f'{dH_iter + err_ub_iter}: {1 - new_min_found_dH/min_found_dH:.3%}, '
-        #           f'{is_improved=}, {err_ub=:.4f}, dEH={new_min_found_dH:.4f}')
+        if verbose > 3:
+            if min_found_dH > new_min_found_dH:
+                print(f'{time.ctime()} ({dH_iter + err_ub_iter} iter): {1 - new_min_found_dH/min_found_dH:.3%}, '
+                      f'{is_improved=}, {new_err_ub=:.4f}, dEH={new_min_found_dH:.4f}')
+            elif err_ub > new_err_ub:
+                print(f'{time.ctime()} ({dH_iter + err_ub_iter} iter): {new_err_ub=:.4f}')
         min_found_dH = new_min_found_dH
-
+        err_ub = new_err_ub
 
     # Find size of the fixed-scale grid for exhaustive search.
     if np.isfinite(target_err):
@@ -239,5 +242,5 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
     else:
         upper.num_exhaustive_computed = 0
 
-    print(f'{dH_iter + err_ub_iter} total, {dH_iter} dH-minimizing')
+    # print(f'{time.ctime()}: {dH_iter + err_ub_iter} total, {dH_iter} dH-minimizing')
     return min_found_dH, err_ub, upper.num_dh_computed, upper.num_exhaustive_computed, err_ub_iter, dH_iter
