@@ -2,7 +2,7 @@ from distutils.core import setup
 
 setup(
     name='euclidean_hausdorff',
-    version='1.3.1',
+    version='1.3.2',
     author='Vladyslav Oles, Blake Cecil',
     author_email='vlad.oles@proton.me',
     packages=['euclidean_hausdorff'],
@@ -10,8 +10,10 @@ setup(
     description="quick approximation of the Gromov–Hausdorff distance restricted to Euclidean isometries",
     long_description=open('README.md').read(),
     install_requires=[
-        "scipy >= 1.12.0",
+        "torch==2.9.1+cpu",
+        "scipy >= 1.15.3",
         "sortedcontainers >= 2.4.0",
         "numpy >= 1.26.4",
+        "pymanopt >= 2.2.1"
     ],
 )

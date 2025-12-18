@@ -1,11 +1,14 @@
 import numpy as np
+import torch
 from scipy import spatial as sp
 from itertools import product, starmap
 from sortedcontainers import SortedList
 
+
+
 from .point_cloud import PointCloud
 from .transformation import Transformation
-
+from .riem_opt import optimize_deh_prod, optimize_deh_sum
 
 def diam(coords):
     # Remove dimensions in which the coordinates are constant (if any).
@@ -243,3 +246,43 @@ def upper(A_coords, B_coords, n_err_ub_iter=None, target_acc=None, target_err=No
         ret_val = min_dH
 
     return ret_val
+
+
+def optimize_deh_riem(A_coords, B_coords, n_restarts=10, min_dist = 1e-6, joint_opt=False, special_eucl=False, verbose=0):
+    """
+    Approximate the Euclidean–Hausdorff distance as a riemannian optimization problem.
+    The manifold is either treated correctly as O(k) x R^k (joint_opt=True) or as the product of
+    O(k) and R^k separately (joint_opt=False). Because the problem is non-convex multiple
+    restarts are performed and the best result is returned.
+
+    :param A_coords: points of A, (?×k)-array, np.ndarray or torch.Tensor
+    :param B_coords: points of B, (?×k)-array, np.array or torch.Tensor
+    :param n_restarts: number of random restarts, int
+    :param min_dist: minimum distance to attempt to achieve, float
+    :param joint_opt: whether to optimize over O(k) x R^k jointly, bool
+    :param special_eucl: whether to consider only orientation-preserving transformations, bool
+    :param verbose: detalization level in the output, int
+    :return: approximate dEH, optimal rotation, optimal translation
+    """
+
+    if A_coords.shape[1] != B_coords.shape[1]:
+        raise ValueError('point clouds must have the same ambient dimension')
+
+    A,B = map(lambda x: torch.tensor(x,dtype=torch.double), [A_coords, B_coords])
+
+    A = A - A.mean(dim=0)
+    B = B - B.mean(dim=0)
+
+    i = 0
+    best_dist, dist = 1e6, 1e6
+    best_o, best_t = None, None
+    f = optimize_deh_prod if joint_opt else optimize_deh_sum
+    
+    while dist > min_dist and i < n_restarts:
+        dist, o_inv, t_inv = f(A,B,special_eucl=special_eucl, verbose=verbose)
+        i += 1
+        if dist < best_dist:
+            best_dist = dist
+            best_o = o_inv
+            best_t = t_inv
+    return best_dist, best_o, best_t

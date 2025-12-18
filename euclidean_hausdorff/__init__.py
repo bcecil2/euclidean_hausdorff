@@ -1,3 +1,3 @@
-from euclidean_hausdorff.eucl_haus import upper, diam
+from euclidean_hausdorff.eucl_haus import upper, optimize_deh_riem, diam
 from euclidean_hausdorff.transformation import Transformation
 from euclidean_hausdorff.point_cloud import PointCloud
