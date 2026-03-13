@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+### v1.3.2
+### Fix
+Add dependencies to toml and removed setuptools file
+
 ### v1.3.1 (Oct 25 2024)
 
 ### Feature
